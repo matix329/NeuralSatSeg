@@ -8,16 +8,13 @@ class UNET:
     def build_model(self):
         inputs = layers.Input(self.input_shape)
 
-        # Enkoder
         c1, p1 = self.conv_block(inputs, 64)
         c2, p2 = self.conv_block(p1, 128)
         c3, p3 = self.conv_block(p2, 256)
         c4, p4 = self.conv_block(p3, 512)
 
-        # Bottleneck
         bottleneck = self.conv_block(p4, 1024, pool=False)
 
-        # Global pooling i klasyfikacja
         x = layers.GlobalAveragePooling2D()(bottleneck)
         outputs = layers.Dense(self.num_classes, activation="softmax")(x)
 
