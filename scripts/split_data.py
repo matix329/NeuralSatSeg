@@ -14,7 +14,6 @@ class DataSplitter:
         if random_seed is not None:
             random.seed(random_seed)
 
-        # Sprawdzenie, czy ścieżki istnieją
         if not os.path.exists(self.input_dir):
             raise FileNotFoundError(f"Input directory '{self.input_dir}' does not exist.")
         os.makedirs(self.output_dir, exist_ok=True)
