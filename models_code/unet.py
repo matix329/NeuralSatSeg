@@ -1,4 +1,23 @@
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers, models
+
+def conv_block(inputs, filters):
+    x = layers.Conv2D(filters, kernel_size=(3, 3), activation='relu', padding='same')(inputs)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(0.3)(x)
+    x = layers.Conv2D(filters, kernel_size=(3, 3), activation='relu', padding='same')(x)
+    x = layers.BatchNormalization()(x)
+    return x
+
+def encoder_block(inputs, filters):
+    x = conv_block(inputs, filters)
+    p = layers.MaxPooling2D(pool_size=(2, 2))(x)
+    return x, p
+
+def decoder_block(inputs, skip_features, filters):
+    x = layers.Conv2DTranspose(filters, kernel_size=(2, 2), strides=(2, 2), padding='same')(inputs)
+    x = layers.concatenate([x, skip_features])
+    x = conv_block(x, filters)
+    return x
 
 class UNET:
     def __init__(self, input_shape=(64, 64, 3), num_classes=10):
@@ -6,23 +25,18 @@ class UNET:
         self.num_classes = num_classes
 
     def build_model(self):
-        inputs = layers.Input(self.input_shape)
+        inputs = layers.Input(shape=self.input_shape)
 
-        c1, p1 = self.conv_block(inputs, 64)
-        c2, p2 = self.conv_block(p1, 128)
-        c3, p3 = self.conv_block(p2, 256)
-        c4, p4 = self.conv_block(p3, 512)
+        s1, p1 = encoder_block(inputs, 32)
+        s2, p2 = encoder_block(p1, 64)
+        s3, p3 = encoder_block(p2, 128)
 
-        bottleneck = self.conv_block(p4, 1024, pool=False)
+        b1 = conv_block(p3, 256)
 
-        x = layers.GlobalAveragePooling2D()(bottleneck)
-        outputs = layers.Dense(self.num_classes, activation="softmax")(x)
+        d1 = decoder_block(b1, s3, 128)
+        d2 = decoder_block(d1, s2, 64)
+        d3 = decoder_block(d2, s1, 32)
 
-        return Model(inputs, outputs)
+        outputs = layers.Conv2D(self.num_classes, kernel_size=(1, 1), activation='softmax')(d3)
 
-    def conv_block(self, inputs, filters, pool=True):
-        x = layers.Conv2D(filters, (3, 3), activation="relu", padding="same")(inputs)
-        x = layers.Conv2D(filters, (3, 3), activation="relu", padding="same")(x)
-        if pool:
-            return x, layers.MaxPooling2D((2, 2))(x)
-        return x
+        return models.Model(inputs, outputs)
