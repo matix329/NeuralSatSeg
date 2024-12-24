@@ -11,11 +11,11 @@ class DataLoader:
         mask_paths = sorted([os.path.join(mask_dir, fname) for fname in os.listdir(mask_dir) if fname.endswith(".png")])
 
         dataset = tf.data.Dataset.from_tensor_slices((image_paths, mask_paths))
-        dataset = dataset.map(self._process_path).batch(self.batch_size)
+        dataset = dataset.map(self.process_path).batch(self.batch_size)
 
         return dataset
 
-    def _process_path(self, image_path, mask_path):
+    def process_path(self, image_path, mask_path):
         image = tf.io.read_file(image_path)
         image = tf.image.decode_jpeg(image, channels=3)
         image = tf.image.resize(image, self.image_size) / 255.0
