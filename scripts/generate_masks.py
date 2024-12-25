@@ -1,46 +1,108 @@
 import os
 import cv2
+import numpy as np
+from scripts.color_logger import ColorLogger
 
 class MaskGenerator:
-    def __init__(self, image_base_dir, mask_base_dir, threshold=127):
-        self.image_base_dir = image_base_dir
-        self.mask_base_dir = mask_base_dir
-        self.threshold = threshold
+    def __init__(self, base_dir=None, class_map=None):
+        if base_dir is None:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            self.project_dir = os.path.abspath(os.path.join(script_dir, ".."))
+            self.image_base_dir = os.path.join(self.project_dir, "data", "processed")
+        else:
+            self.image_base_dir = os.path.join(base_dir, "processed")
+        self.mask_base_dir = os.path.join(self.image_base_dir, "masks")
 
-    def generate(self):
+        self.class_map = class_map if class_map else {}
+        self.logger_instance = ColorLogger(__name__)
+        self.logger = self.logger_instance.get_logger()
+
+    def generate_masks(self):
         for split in ["train", "val", "test"]:
             split_image_dir = os.path.join(self.image_base_dir, split)
             split_mask_dir = os.path.join(self.mask_base_dir, split)
 
             if not os.path.exists(split_image_dir):
-                print(f"[ERROR] Directory {split_image_dir} does not exist!")
+                self.logger.error(f"Directory {split_image_dir} does not exist!")
                 continue
 
             os.makedirs(split_mask_dir, exist_ok=True)
 
-            for class_name in os.listdir(split_image_dir):
+            for class_name, class_value in self.class_map.items():
                 class_image_dir = os.path.join(split_image_dir, class_name)
                 class_mask_dir = os.path.join(split_mask_dir, class_name)
+
+                if not os.path.isdir(class_image_dir):
+                    self.logger.warning(f"{class_image_dir} is not a directory, skipping...")
+                    continue
+
                 os.makedirs(class_mask_dir, exist_ok=True)
 
                 for file_name in os.listdir(class_image_dir):
+                    if not file_name.lower().endswith(".jpg"):
+                        continue
+
                     img_path = os.path.join(class_image_dir, file_name)
                     mask_path = os.path.join(class_mask_dir, file_name.replace(".jpg", ".png"))
 
-                    image = cv2.imread(img_path, cv2.IMREAD_COLOR)
-                    if image is None:
-                        print(f"[WARNING] Cannot read image {img_path}, skipping...")
-                        continue
+                    try:
+                        image = cv2.imread(img_path, cv2.IMREAD_COLOR)
+                        if image is None:
+                            self.logger.warning(f"Cannot read image {img_path}, skipping...")
+                            continue
 
-                    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                    _, mask = cv2.threshold(gray, self.threshold, 255, cv2.THRESH_BINARY)
+                        height, width, _ = image.shape
+                        mask = np.full((height, width), class_value, dtype=np.uint8)
+                        cv2.imwrite(mask_path, mask)
 
-                    cv2.imwrite(mask_path, mask)
-                    print(f"[INFO] Mask generated for {file_name} in {split}/{class_name}")
+                        self.logger.info(f"Mask generated for {file_name} in {split}/{class_name}")
+
+                    except Exception as e:
+                        self.logger.error(f"Error processing {img_path}: {e}")
+
+    def validate_dataset(self):
+        for split in ["train", "val", "test"]:
+            image_dir = os.path.join(self.image_base_dir, split)
+            mask_dir = os.path.join(self.mask_base_dir, split)
+
+            if not os.path.exists(image_dir) or not os.path.exists(mask_dir):
+                self.logger.error(f"Missing directories for {split}, skipping validation.")
+                continue
+
+            for class_name in os.listdir(image_dir):
+                class_image_dir = os.path.join(image_dir, class_name)
+                class_mask_dir = os.path.join(mask_dir, class_name)
+
+                if not os.path.isdir(class_image_dir) or not os.path.isdir(class_mask_dir):
+                    continue
+
+                image_files = [f for f in os.listdir(class_image_dir) if f.lower().endswith(".jpg")]
+                mask_files = [f for f in os.listdir(class_mask_dir) if f.lower().endswith(".png")]
+
+                if len(image_files) != len(mask_files):
+                    self.logger.error(f"Mismatch in {split}/{class_name}: {len(image_files)} images, {len(mask_files)} masks!")
+                else:
+                    self.logger.info(f"Validation passed for {split}/{class_name}")
+
+    def report_log_summary(self):
+        counters = self.logger_instance.get_counters()
+        self.logger.info(f"Log summary: {counters}")
 
 if __name__ == "__main__":
-    IMAGE_BASE_DIR = "/Users/matix329/PycharmProjects/NeuralSatSeg/data/processed"
-    MASK_BASE_DIR = "/Users/matix329/PycharmProjects/NeuralSatSeg/data/processed/masks"
+    class_mapping = {
+        "AnnualCrop": 1,
+        "Forest": 2,
+        "HerbaceousVegetation": 3,
+        "Highway": 4,
+        "Industrial": 5,
+        "Pasture": 6,
+        "PermanentCrop": 7,
+        "Residential": 8,
+        "River": 9,
+        "SeaLake": 10
+    }
 
-    generator = MaskGenerator(IMAGE_BASE_DIR, MASK_BASE_DIR, threshold=127)
-    generator.generate()
+    generator = MaskGenerator(class_map=class_mapping)
+    generator.generate_masks()
+    generator.validate_dataset()
+    generator.report_log_summary()
