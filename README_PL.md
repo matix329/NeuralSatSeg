@@ -7,3 +7,4 @@ NeuralSatSeg to projekt mający na celu opracowanie modeli głębokiego uczenia 
 
 ## Wymagania
 - Python 3.10+
+- Docker

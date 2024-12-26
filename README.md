@@ -7,3 +7,4 @@ NeuralSatSeg is a project aimed at developing deep learning models for **satelit
 
 ## Requirements
 - Python 3.10+
+- Docker
