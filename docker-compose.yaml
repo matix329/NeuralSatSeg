@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6000:6000"
+    environment:
+      MLFLOW_TRACKING_URI: postgresql://mlflow:mlflow@database:5432/mlflow
+      BACKEND_URI: postgresql://mlflow:mlflow@database:5432/mlflow
+      ARTIFACT_ROOT: /mlruns
+    volumes:
+      - ./mlruns:/mlruns
+      - ./mlflow_data:/app
+    command: >
+      mlflow server
+      --backend-store-uri ${BACKEND_URI}
+      --default-artifact-root ${ARTIFACT_ROOT}
+      --host 0.0.0.0
+      --port 6000
+
+  database:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+
+volumes:
+  mlruns:
+  mlflow_data:
+  postgres_data:
