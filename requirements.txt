@@ -6,3 +6,5 @@ pandas
 pytest
 opencv-python
 logger
+mlflow
+psycopg2-binary
