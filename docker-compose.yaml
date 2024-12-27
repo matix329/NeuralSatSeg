@@ -3,7 +3,7 @@ services:
   mlflow:
     image: neuralsatseg-mlflow
     ports:
-      - "5001:6000"
+      - "5001:5000"
     environment:
       - MLFLOW_TRACKING_URI=postgresql://mlflow:mlflow@database:5432/mlflow
       - ARTIFACT_ROOT=/mlruns
