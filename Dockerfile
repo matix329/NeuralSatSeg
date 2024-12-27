@@ -1,12 +1,7 @@
-FROM python:3.10-slim
+FROM python:3.10
 
-WORKDIR /app
+RUN pip install mlflow psycopg2-binary
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV MLFLOW_TRACKING_URI=postgresql://mlflow:mlflow@database:5432/mlflow
 
-COPY . .
-
-EXPOSE 6000
-
-CMD ["mlflow", "server", "--host", "0.0.0.0", "--port", "6000"]
+CMD ["mlflow", "server", "--backend-store-uri", "postgresql://mlflow:mlflow@database:5432/mlflow", "--default-artifact-root", "/mlruns", "--host", "0.0.0.0", "--port", "5000"]

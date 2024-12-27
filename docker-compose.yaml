@@ -1,40 +1,39 @@
-version: '3.8'
-
+version: "3.9"
 services:
   mlflow:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: neuralsatseg-mlflow
     ports:
-      - "6000:6000"
+      - "5001:6000"
     environment:
-      MLFLOW_TRACKING_URI: postgresql://mlflow:mlflow@database:5432/mlflow
-      BACKEND_URI: postgresql://mlflow:mlflow@database:5432/mlflow
-      ARTIFACT_ROOT: /mlruns
+      - MLFLOW_TRACKING_URI=postgresql://mlflow:mlflow@database:5432/mlflow
+      - ARTIFACT_ROOT=/mlruns
+    depends_on:
+      - database
+    networks:
+      - neuralsatseg_default
     volumes:
-      - ./mlruns:/mlruns
-      - ./mlflow_data:/app
+      - mlflow_artifacts:/mlruns
     command: >
       mlflow server
-      --backend-store-uri ${BACKEND_URI}
-      --default-artifact-root ${ARTIFACT_ROOT}
+      --backend-store-uri postgresql://mlflow:mlflow@database:5432/mlflow
+      --default-artifact-root /mlruns
       --host 0.0.0.0
-      --port 6000
+      --port 5000
 
   database:
     image: postgres:13
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: mlflow
       POSTGRES_PASSWORD: mlflow
       POSTGRES_DB: mlflow
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    deploy:
-      replicas: 1
+    networks:
+      - neuralsatseg_default
+
+networks:
+  neuralsatseg_default:
+    driver: bridge
 
 volumes:
-  mlruns:
-  mlflow_data:
-  postgres_data:
+  mlflow_artifacts:
