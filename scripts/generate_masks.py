@@ -8,10 +8,11 @@ class MaskGenerator:
         if base_dir is None:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             self.project_dir = os.path.abspath(os.path.join(script_dir, ".."))
-            self.image_base_dir = os.path.join(self.project_dir, "data", "processed")
+            self.image_base_dir = os.path.join(self.project_dir, "data", "processed", "data")
         else:
-            self.image_base_dir = os.path.join(base_dir, "processed")
-        self.mask_base_dir = os.path.join(self.image_base_dir, "masks")
+            self.image_base_dir = os.path.join(base_dir, "processed", "data")
+
+        self.mask_base_dir = os.path.join(self.image_base_dir, "..", "masks")
 
         self.class_map = class_map if class_map else {}
         self.logger_instance = ColorLogger(__name__)
