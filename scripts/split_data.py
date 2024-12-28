@@ -5,7 +5,7 @@ import random
 class DataSplitter:
     def __init__(self, input_dir, output_dir, train_split=0.7, val_split=0.2, test_split=0.1, random_seed=4):
         self.input_dir = input_dir
-        self.output_dir = output_dir
+        self.output_dir = os.path.join(output_dir, "data")
         self.splits = {
             "train": train_split,
             "val": val_split,
@@ -24,12 +24,10 @@ class DataSplitter:
         if not categories:
             raise ValueError(f"No valid categories found in input directory: {self.input_dir}")
 
-        print(f"Found categories: {categories}")
         for split_name in self.splits:
             self.create_split_dirs(split_name, categories)
 
         for category in categories:
-            print(f"Processing category: {category}")
             self.process_category(category)
 
     def create_split_dirs(self, split_name, categories):
@@ -42,7 +40,6 @@ class DataSplitter:
         files = [file for file in os.listdir(category_path) if not file.startswith(".")]
 
         if not files:
-            print(f"No files found in category: {category}")
             return
 
         random.shuffle(files)
@@ -69,7 +66,6 @@ class DataSplitter:
 
             try:
                 shutil.copy(src_file, dest_file)
-                print(f"Copied {file} to {dest_dir}")
             except Exception as e:
                 print(f"Error copying {file}: {e}")
 
