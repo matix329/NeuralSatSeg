@@ -5,7 +5,7 @@ import random
 class DataSplitter:
     def __init__(self, input_dir, output_dir, train_split=0.7, val_split=0.2, test_split=0.1, random_seed=4):
         self.input_dir = input_dir
-        self.output_dir = os.path.join(output_dir, "data")
+        self.output_dir = os.path.join(output_dir, "images")
         self.splits = {
             "train": train_split,
             "val": val_split,
