@@ -1,18 +1,15 @@
 import tensorflow as tf
-import os
 
 class DataLoader:
-    def __init__(self, image_size=(64, 64), batch_size=32):
-        self.image_size = image_size
+    def __init__(self, batch_size, image_size):
         self.batch_size = batch_size
+        self.image_size = image_size
 
     def load(self, image_dir, mask_dir):
-        image_paths = sorted([os.path.join(image_dir, fname) for fname in os.listdir(image_dir) if fname.endswith((".jpg", ".png"))])
-        mask_paths = sorted([os.path.join(mask_dir, fname) for fname in os.listdir(mask_dir) if fname.endswith(".png")])
-
-        dataset = tf.data.Dataset.from_tensor_slices((image_paths, mask_paths))
-        dataset = dataset.map(self.process_path).batch(self.batch_size)
-
+        image_paths = tf.data.Dataset.list_files(image_dir + "/**/*.jpg", shuffle=False)
+        mask_paths = tf.data.Dataset.list_files(mask_dir + "/**/*.png", shuffle=False)
+        dataset = tf.data.Dataset.zip((image_paths, mask_paths))
+        dataset = dataset.map(self.process_path, num_parallel_calls=tf.data.AUTOTUNE).batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
         return dataset
 
     def process_path(self, image_path, mask_path):
@@ -22,7 +19,7 @@ class DataLoader:
 
         mask = tf.io.read_file(mask_path)
         mask = tf.image.decode_png(mask, channels=1)
-        mask = tf.image.resize(mask, self.image_size, method='nearest')
+        mask = tf.image.resize(mask, self.image_size, method="nearest")
         mask = tf.cast(mask, tf.int32)
 
         return image, mask
