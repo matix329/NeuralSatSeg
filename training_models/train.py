@@ -10,7 +10,7 @@ temp_dir = os.path.join(os.getcwd(), "temp")
 os.makedirs(temp_dir, exist_ok=True)
 
 class ModelTrainer:
-    def __init__(self, train_dir, val_dir, input_shape=(64, 64, 3), num_classes=10, batch_size=32):
+    def __init__(self, train_dir, val_dir, input_shape=(128, 128, 3), num_classes=10, batch_size=32):
         self.logger = ColorLogger("ModelTrainer").get_logger()
         self.train_image_dir = os.path.join(train_dir, "images/train")
         self.train_mask_dir = os.path.join(train_dir, "masks/train")
@@ -34,7 +34,7 @@ class ModelTrainer:
             return UNET(input_shape=self.input_shape, num_classes=self.num_classes).build_model()
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    def train(self, model_type, output_file, experiment_name, run_name, epochs=1):
+    def train(self, model_type, output_file, experiment_name, run_name, epochs=5):
         self.mlflow_manager = MLflowManager(experiment_name)
         self.mlflow_manager.start_run(run_name=run_name)
 
@@ -81,7 +81,6 @@ class ModelTrainer:
         self.mlflow_manager.log_model(model, model_name=model_type.lower())
         self.mlflow_manager.end_run()
 
-
 if __name__ == "__main__":
     logger = ColorLogger("Main").get_logger()
 
@@ -89,19 +88,17 @@ if __name__ == "__main__":
         experiment_name = input("Enter the name of the experiment: ")
         run_name = input("Enter the name of the model/run: ")
         model_type = input("Enter the model type (e.g., 'unet'): ")
-        output_file = input("Enter the name of the output file (e.g., 'unet_model.keras or unet_1.h5'): ")
+        base_output_file = input("Enter the name of the output file (e.g., 'unet_model or unet_1'): ")
+        output_file = f"{base_output_file}.keras"
         output_path = os.path.join("models", output_file)
 
         trainer = ModelTrainer(
             train_dir="/Users/matix329/PycharmProjects/NeuralSatSeg/data/processed",
             val_dir="/Users/matix329/PycharmProjects/NeuralSatSeg/data/processed",
-            input_shape=(64, 64, 3),
+            input_shape=(128, 128, 3),
             num_classes=10,
             batch_size=32
         )
-        trainer.train(model_type=model_type, output_file=output_path, experiment_name=experiment_name, run_name=run_name, epochs=1)
+        trainer.train(model_type=model_type, output_file=output_path, experiment_name=experiment_name, run_name=run_name, epochs=5)
     except Exception as e:
         logger.error(f"An error occurred: {e}")
-    finally:
-        import shutil
-        shutil.rmtree(temp_dir, ignore_errors=True)

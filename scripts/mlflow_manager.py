@@ -21,7 +21,7 @@ class MLflowManager:
 
     def log_model(self, model, model_name):
         artifact_path = model_name
-        input_example = np.random.random((1, 64, 64, 3))
+        input_example = np.random.random((1, 128, 128, 3))
         signature = infer_signature(input_example, model.predict(input_example))
 
         mlflow.keras.log_model(
