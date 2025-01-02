@@ -4,6 +4,7 @@ import numpy as np
 
 class MLflowManager:
     def __init__(self, experiment_name):
+        mlflow.set_tracking_uri("http://localhost:5001")
         mlflow.set_experiment(experiment_name)
         self.experiment_name = experiment_name
 
@@ -19,9 +20,7 @@ class MLflowManager:
             mlflow.log_metric(key, value)
 
     def log_model(self, model, model_name):
-        artifact_path = f"models/{model_name}"
-        print(f"Logging model to: {artifact_path}")
-
+        artifact_path = model_name
         input_example = np.random.random((1, 64, 64, 3))
         signature = infer_signature(input_example, model.predict(input_example))
 
@@ -31,6 +30,9 @@ class MLflowManager:
             input_example=input_example,
             signature=signature
         )
+
+        model_uri = f"runs:/{mlflow.active_run().info.run_id}/{artifact_path}"
+        mlflow.register_model(model_uri, model_name)
 
     def end_run(self):
         mlflow.end_run()
