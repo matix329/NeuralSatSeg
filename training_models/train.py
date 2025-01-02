@@ -1,17 +1,13 @@
-import tempfile
 import os
-
-temp_dir = os.path.join(os.getcwd(), "temp")
-tempfile.tempdir = temp_dir
-os.makedirs(temp_dir, exist_ok=True)
-
 from tensorflow.keras.optimizers import Adam
 from scripts.preprocess import DataLoader
 from models_code.unet import UNET
 from scripts.color_logger import ColorLogger
 from scripts.mlflow_manager import MLflowManager
-from mlflow.models.signature import infer_signature
 import numpy as np
+
+temp_dir = os.path.join(os.getcwd(), "temp")
+os.makedirs(temp_dir, exist_ok=True)
 
 class ModelTrainer:
     def __init__(self, train_dir, val_dir, input_shape=(64, 64, 3), num_classes=10, batch_size=32):
@@ -29,22 +25,14 @@ class ModelTrainer:
     def load_data(self):
         train_data = self.data_loader.load(self.train_image_dir, self.train_mask_dir)
         val_data = self.data_loader.load(self.val_image_dir, self.val_mask_dir)
-        if train_data.cardinality().numpy() == 0:
-            self.logger.error("Training data is empty!")
-            raise ValueError("Training data is empty.")
-        if val_data.cardinality().numpy() == 0:
-            self.logger.error("Validation data is empty!")
-            raise ValueError("Validation data is empty.")
-        self.logger.info("Data loaded successfully.")
+        if train_data.cardinality().numpy() == 0 or val_data.cardinality().numpy() == 0:
+            raise ValueError("Training or validation data is empty.")
         return train_data, val_data
 
     def build_model(self, model_type):
         if model_type.lower() == "unet":
-            self.logger.info("Building UNet model...")
             return UNET(input_shape=self.input_shape, num_classes=self.num_classes).build_model()
-        else:
-            self.logger.error(f"Unknown model type: {model_type}")
-            raise ValueError(f"Unsupported model type: {model_type}")
+        raise ValueError(f"Unsupported model type: {model_type}")
 
     def train(self, model_type, output_file, experiment_name, run_name, epochs=1):
         self.mlflow_manager = MLflowManager(experiment_name)
@@ -71,7 +59,6 @@ class ModelTrainer:
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
         validation_steps = max(1, val_data.cardinality().numpy() // self.batch_size)
 
-        self.logger.info("Starting model training...")
         history = model.fit(
             train_data.repeat(),
             validation_data=val_data.repeat(),
@@ -79,7 +66,6 @@ class ModelTrainer:
             steps_per_epoch=steps_per_epoch,
             validation_steps=validation_steps,
         )
-        self.logger.info("Model training completed.")
 
         self.mlflow_manager.log_metrics({
             "train_accuracy": max(history.history["accuracy"]),
@@ -88,19 +74,12 @@ class ModelTrainer:
             "val_loss": min(history.history["val_loss"]),
         })
 
-        self.logger.info(f"Saving the model to {output_file}...")
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         model.save(output_file)
 
         input_example = np.random.random((1, *self.input_shape))
-        signature = infer_signature(input_example, model.predict(input_example))
-        self.mlflow_manager.log_model(
-            model,
-            model_name=model_type.lower()
-        )
-
+        self.mlflow_manager.log_model(model, model_name=model_type.lower())
         self.mlflow_manager.end_run()
-        self.logger.info("Experiment completed successfully.")
 
 
 if __name__ == "__main__":
