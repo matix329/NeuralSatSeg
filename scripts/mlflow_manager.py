@@ -1,6 +1,5 @@
 import mlflow.keras
 from mlflow.models.signature import infer_signature
-import numpy as np
 
 class MLflowManager:
     def __init__(self, experiment_name):
@@ -19,9 +18,8 @@ class MLflowManager:
         for key, value in metrics.items():
             mlflow.log_metric(key, value)
 
-    def log_model(self, model, model_name):
+    def log_model(self, model, model_name, input_example):
         artifact_path = model_name
-        input_example = np.random.random((1, 128, 128, 3))
         signature = infer_signature(input_example, model.predict(input_example))
 
         mlflow.keras.log_model(

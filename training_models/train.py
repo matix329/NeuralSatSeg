@@ -78,7 +78,7 @@ class ModelTrainer:
         model.save(output_file)
 
         input_example = np.random.random((1, *self.input_shape))
-        self.mlflow_manager.log_model(model, model_name=model_type.lower())
+        self.mlflow_manager.log_model(model, model_name=model_type.lower(), input_example=input_example)
         self.mlflow_manager.end_run()
 
 if __name__ == "__main__":
@@ -88,7 +88,7 @@ if __name__ == "__main__":
         experiment_name = input("Enter the name of the experiment: ")
         run_name = input("Enter the name of the model/run: ")
         model_type = input("Enter the model type (e.g., 'unet'): ")
-        base_output_file = input("Enter the name of the output file (e.g., 'unet_model or unet_1'): ")
+        base_output_file = input("Enter the name of the output file (e.g., 'unet_1'): ")
         output_file = f"{base_output_file}.keras"
         output_path = os.path.join("models", output_file)
 
