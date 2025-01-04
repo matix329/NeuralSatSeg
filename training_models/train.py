@@ -6,11 +6,8 @@ from scripts.color_logger import ColorLogger
 from scripts.mlflow_manager import MLflowManager
 import numpy as np
 
-temp_dir = os.path.join(os.getcwd(), "temp")
-os.makedirs(temp_dir, exist_ok=True)
-
 class ModelTrainer:
-    def __init__(self, train_dir, val_dir, input_shape=(128, 128, 3), num_classes=10, batch_size=32):
+    def __init__(self, train_dir, val_dir, input_shape=(256, 256, 3), num_classes=10, batch_size=32):
         self.logger = ColorLogger("ModelTrainer").get_logger()
         self.train_image_dir = os.path.join(train_dir, "images/train")
         self.train_mask_dir = os.path.join(train_dir, "masks/train")
@@ -34,7 +31,7 @@ class ModelTrainer:
             return UNET(input_shape=self.input_shape, num_classes=self.num_classes).build_model()
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    def train(self, model_type, output_file, experiment_name, run_name, epochs=5):
+    def train(self, model_type, output_file, experiment_name, run_name, epochs=10):
         self.mlflow_manager = MLflowManager(experiment_name)
         self.mlflow_manager.start_run(run_name=run_name)
 
@@ -42,7 +39,7 @@ class ModelTrainer:
         model = self.build_model(model_type)
 
         model.compile(
-            optimizer=Adam(learning_rate=0.001),
+            optimizer=Adam(learning_rate=0.05),
             loss="sparse_categorical_crossentropy",
             metrics=["accuracy"]
         )
@@ -53,7 +50,7 @@ class ModelTrainer:
             "num_classes": self.num_classes,
             "batch_size": self.batch_size,
             "epochs": epochs,
-            "learning_rate": 0.001
+            "learning_rate": 0.05
         })
 
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
@@ -87,18 +84,19 @@ if __name__ == "__main__":
     try:
         experiment_name = input("Enter the name of the experiment: ")
         run_name = input("Enter the name of the model/run: ")
-        model_type = input("Enter the model type (e.g., 'unet'): ")
+
+        model_type = None
+        while model_type not in ["unet", "cnn"]:
+            model_type = input("Enter the model type (unet/cnn): ").lower()
+
         base_output_file = input("Enter the name of the output file (e.g., 'unet_1'): ")
         output_file = f"{base_output_file}.keras"
         output_path = os.path.join("models", output_file)
 
         trainer = ModelTrainer(
             train_dir="/Users/matix329/PycharmProjects/NeuralSatSeg/data/processed",
-            val_dir="/Users/matix329/PycharmProjects/NeuralSatSeg/data/processed",
-            input_shape=(128, 128, 3),
-            num_classes=10,
-            batch_size=32
+            val_dir="/Users/matix329/PycharmProjects/NeuralSatSeg/data/processed"
         )
-        trainer.train(model_type=model_type, output_file=output_path, experiment_name=experiment_name, run_name=run_name, epochs=5)
+        trainer.train(model_type=model_type, output_file=output_path, experiment_name=experiment_name, run_name=run_name)
     except Exception as e:
         logger.error(f"An error occurred: {e}")
