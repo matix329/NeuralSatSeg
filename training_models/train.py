@@ -7,7 +7,7 @@ from scripts.mlflow_manager import MLflowManager
 import numpy as np
 
 class ModelTrainer:
-    def __init__(self, train_dir, val_dir, input_shape=(256, 256, 3), num_classes=10, batch_size=32):
+    def __init__(self, train_dir, val_dir, input_shape=(128, 128, 3), num_classes=10, batch_size=32):
         self.logger = ColorLogger("ModelTrainer").get_logger()
         self.train_image_dir = os.path.join(train_dir, "images/train")
         self.train_mask_dir = os.path.join(train_dir, "masks/train")
@@ -31,7 +31,7 @@ class ModelTrainer:
             return UNET(input_shape=self.input_shape, num_classes=self.num_classes).build_model()
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    def train(self, model_type, output_file, experiment_name, run_name, epochs=10):
+    def train(self, model_type, output_file, experiment_name, run_name, epochs=5):
         self.mlflow_manager = MLflowManager(experiment_name)
         self.mlflow_manager.start_run(run_name=run_name)
 
@@ -39,7 +39,7 @@ class ModelTrainer:
         model = self.build_model(model_type)
 
         model.compile(
-            optimizer=Adam(learning_rate=0.05),
+            optimizer=Adam(learning_rate=0.001),
             loss="sparse_categorical_crossentropy",
             metrics=["accuracy"]
         )
@@ -50,26 +50,24 @@ class ModelTrainer:
             "num_classes": self.num_classes,
             "batch_size": self.batch_size,
             "epochs": epochs,
-            "learning_rate": 0.05
+            "learning_rate": 0.001
         })
 
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
         validation_steps = max(1, val_data.cardinality().numpy() // self.batch_size)
 
-        history = model.fit(
-            train_data.repeat(),
-            validation_data=val_data.repeat(),
-            epochs=epochs,
-            steps_per_epoch=steps_per_epoch,
-            validation_steps=validation_steps,
-        )
-
-        self.mlflow_manager.log_metrics({
-            "train_accuracy": max(history.history["accuracy"]),
-            "val_accuracy": max(history.history["val_accuracy"]),
-            "train_loss": min(history.history["loss"]),
-            "val_loss": min(history.history["val_loss"]),
-        })
+        for epoch in range(epochs):
+            history = model.fit(
+                train_data.repeat(),
+                validation_data=val_data.repeat(),
+                epochs=1,
+                steps_per_epoch=steps_per_epoch,
+                validation_steps=validation_steps,
+            )
+            self.mlflow_manager.log_epoch_metrics(
+                history=history,
+                epoch=epoch
+            )
 
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         model.save(output_file)
