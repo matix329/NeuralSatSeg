@@ -1,7 +1,7 @@
 import os
 from tensorflow.keras.optimizers import Adam
 from scripts.preprocess import DataLoader
-from models_code.unet import UNET
+from models_code.unet.unet import UNET
 from scripts.color_logger import ColorLogger
 from scripts.mlflow_manager import MLflowManager
 import numpy as np
