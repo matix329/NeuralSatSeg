@@ -14,6 +14,16 @@ class MLflowManager:
         for key, value in params.items():
             mlflow.log_param(key, value)
 
+    def log_epoch_metrics(self, history, epoch):
+        metrics = {
+            "train_accuracy": history.history["accuracy"][-1],
+            "val_accuracy": history.history["val_accuracy"][-1],
+            "train_loss": history.history["loss"][-1],
+            "val_loss": history.history["val_loss"][-1],
+        }
+        for key, value in metrics.items():
+            mlflow.log_metric(key, value, step=epoch)
+
     def log_metrics(self, metrics):
         for key, value in metrics.items():
             mlflow.log_metric(key, value)
