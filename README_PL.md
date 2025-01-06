@@ -13,3 +13,4 @@ NeuralSatSeg to projekt mający na celu opracowanie modeli głębokiego uczenia 
 - Python 3.10+
 - Docker
 - Mlflow (do śledzenia wyników podczas trenowania)
+- Tensorboard (do śledzenia wyników podczas trenowania)

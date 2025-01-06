@@ -13,3 +13,4 @@ NeuralSatSeg is a project aimed at developing deep learning models for **satelit
 - Python 3.10+
 - Docker
 - Mlflow (to follow results during trainings)
+- Tensorflow (to follow results during trainings)
