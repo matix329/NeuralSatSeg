@@ -1,7 +1,11 @@
 version: "3.9"
+name: neuralsatseg
+
 services:
   mlflow:
-    image: neuralsatseg-mlflow
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "5001:5000"
     environment:
@@ -12,13 +16,24 @@ services:
     networks:
       - neuralsatseg_default
     volumes:
-      - mlflow_artifacts:/mlruns
+      - ../mlflow_artifacts:/mlruns
     command: >
       mlflow server
       --backend-store-uri postgresql://mlflow:mlflow@database:5432/mlflow
       --default-artifact-root /mlruns
       --host 0.0.0.0
       --port 5000
+
+  tensorboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.tensorboard
+    ports:
+      - "6006:6006"
+    networks:
+      - neuralsatseg_default
+    volumes:
+      - ../mlflow_artifacts:/mlruns
 
   database:
     image: postgres:13
@@ -34,6 +49,3 @@ services:
 networks:
   neuralsatseg_default:
     driver: bridge
-
-volumes:
-  mlflow_artifacts:
