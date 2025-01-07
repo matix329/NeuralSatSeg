@@ -34,6 +34,8 @@ services:
       - neuralsatseg_default
     volumes:
       - ../mlflow_artifacts:/mlruns
+    command: >
+      tensorboard --logdir /mlruns --host 0.0.0.0 --port 6006
 
   database:
     image: postgres:13
