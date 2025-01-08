@@ -67,7 +67,7 @@ class ModelTrainer:
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
         validation_steps = max(1, val_data.cardinality().numpy() // self.batch_size)
 
-        tensorboard_callback = self.tensorboard_manager.get_callback()
+        tensorboard_callback = self.tensorboard_manager.get_callback(experiment_name=experiment_name)
 
         for epoch in range(epochs):
             history = model.fit(
@@ -87,7 +87,7 @@ class ModelTrainer:
         output_path = os.path.join(self.output_dir, output_file)
         model.save(output_path)
 
-        input_example = np.random.random((1, *self.input_shape))
+        input_example = np.random.random((1, *self.input_shape)).astype(np.float32)
         self.mlflow_manager.log_model(model, model_name=model_type.lower(), input_example=input_example)
         self.mlflow_manager.end_run()
 
