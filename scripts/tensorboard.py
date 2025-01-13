@@ -1,4 +1,3 @@
-import time
 import os
 from tensorflow.keras.callbacks import TensorBoard
 
