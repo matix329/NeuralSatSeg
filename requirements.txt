@@ -9,3 +9,5 @@ logger
 mlflow
 psycopg2-binary
 tensorflow
+scikit-image
+tqdm
