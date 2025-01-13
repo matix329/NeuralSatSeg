@@ -24,25 +24,19 @@ class ColorLogger:
         self.wrap_log_methods()
 
     def wrap_log_methods(self):
-        original_methods = {
-            "info": self.logger.info,
-            "warning": self.logger.warning,
-            "error": self.logger.error,
-            "critical": self.logger.critical,
-        }
+        levels = ["info", "warning", "error", "critical"]
 
-        for level in original_methods:
-            def wrapped_log_method(message, *, level=level):
-                self.counters[level.upper()] += 1
-                original_methods[level](message)
+        for level in levels:
+            original_method = getattr(self.logger, level)
+
+            def wrapped_log_method(message, orig_method=original_method, log_level=level):
+                self.counters[log_level.upper()] += 1
+                orig_method(message)
+
             setattr(self.logger, level, wrapped_log_method)
 
     def get_counters(self):
         return self.counters
-
-    def reset_counters(self):
-        for key in self.counters:
-            self.counters[key] = 0
 
     def get_logger(self):
         return self.logger
