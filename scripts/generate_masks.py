@@ -5,18 +5,50 @@ from scripts.color_logger import ColorLogger
 
 class MaskGenerator:
     def __init__(self, base_dir=None, class_map=None):
-        if base_dir is None:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            self.project_dir = os.path.abspath(os.path.join(script_dir, ".."))
-            self.image_base_dir = os.path.join(self.project_dir, "data", "processed", "data")
-        else:
-            self.image_base_dir = os.path.join(base_dir, "processed", "data")
-
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.project_dir = os.path.abspath(os.path.join(script_dir, ".."))
+        self.image_base_dir = os.path.join(self.project_dir, "data", "processed", "images") if base_dir is None else os.path.join(base_dir, "processed", "images")
         self.mask_base_dir = os.path.join(self.image_base_dir, "..", "masks")
-
-        self.class_map = class_map if class_map else {}
+        self.class_map = class_map or {}
         self.logger_instance = ColorLogger(__name__)
         self.logger = self.logger_instance.get_logger()
+
+    def ensure_directory_exists(self, directory):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+    def process_class(self, split_image_dir, split_mask_dir, class_name, class_value):
+        class_image_dir = os.path.join(split_image_dir, class_name)
+        class_mask_dir = os.path.join(split_mask_dir, class_name)
+
+        if not os.path.isdir(class_image_dir):
+            self.logger.warning(f"{class_image_dir} is not a directory, skipping...")
+            return
+
+        self.ensure_directory_exists(class_mask_dir)
+
+        for file_name in os.listdir(class_image_dir):
+            if not file_name.lower().endswith(".jpg"):
+                continue
+
+            img_path = os.path.join(class_image_dir, file_name)
+            mask_path = os.path.join(class_mask_dir, file_name.replace(".jpg", ".png"))
+
+            try:
+                image = cv2.imread(img_path, cv2.IMREAD_COLOR)
+                if image is None:
+                    self.logger.warning(f"Cannot read image {img_path}, skipping...")
+                    continue
+
+                height, width, _ = image.shape
+                mask = np.full((height, width), class_value, dtype=np.uint8)
+                if not cv2.imwrite(mask_path, mask):
+                    self.logger.error(f"Failed to write mask to {mask_path}")
+
+                self.logger.info(f"Mask generated for {file_name} in {class_name}")
+
+            except Exception as e:
+                self.logger.error(f"Error processing {img_path}: {e}")
 
     def generate_masks(self):
         for split in ["train", "val", "test"]:
@@ -27,39 +59,10 @@ class MaskGenerator:
                 self.logger.error(f"Directory {split_image_dir} does not exist!")
                 continue
 
-            os.makedirs(split_mask_dir, exist_ok=True)
+            self.ensure_directory_exists(split_mask_dir)
 
             for class_name, class_value in self.class_map.items():
-                class_image_dir = os.path.join(split_image_dir, class_name)
-                class_mask_dir = os.path.join(split_mask_dir, class_name)
-
-                if not os.path.isdir(class_image_dir):
-                    self.logger.warning(f"{class_image_dir} is not a directory, skipping...")
-                    continue
-
-                os.makedirs(class_mask_dir, exist_ok=True)
-
-                for file_name in os.listdir(class_image_dir):
-                    if not file_name.lower().endswith(".jpg"):
-                        continue
-
-                    img_path = os.path.join(class_image_dir, file_name)
-                    mask_path = os.path.join(class_mask_dir, file_name.replace(".jpg", ".png"))
-
-                    try:
-                        image = cv2.imread(img_path, cv2.IMREAD_COLOR)
-                        if image is None:
-                            self.logger.warning(f"Cannot read image {img_path}, skipping...")
-                            continue
-
-                        height, width, _ = image.shape
-                        mask = np.full((height, width), class_value, dtype=np.uint8)
-                        cv2.imwrite(mask_path, mask)
-
-                        self.logger.info(f"Mask generated for {file_name} in {split}/{class_name}")
-
-                    except Exception as e:
-                        self.logger.error(f"Error processing {img_path}: {e}")
+                self.process_class(split_image_dir, split_mask_dir, class_name, class_value)
 
     def validate_dataset(self):
         for split in ["train", "val", "test"]:
