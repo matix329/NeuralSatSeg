@@ -19,15 +19,12 @@ def process_roads(data_dir, output_dir):
 
         normalized_image = DataNormalizer.normalize(image)
 
-        tiler = Tiler(tile_size=256)
-        tiles = tiler.tile(normalized_image, mask)
-
         augmenter = Augmenter()
         exporter = DataExporter(output_dir)
-        for idx, (img_tile, mask_tile) in enumerate(tiles):
-            augmented_tiles = augmenter.augment(img_tile, mask_tile)
-            for aug_idx, (aug_img, aug_mask) in enumerate(augmented_tiles):
-                exporter.export_tile(aug_img, aug_mask, f"{img_name}_tile{idx}_aug{aug_idx}")
+        
+        augmented_tiles = augmenter.augment(normalized_image, mask)
+        for aug_idx, (aug_img, aug_mask) in enumerate(augmented_tiles):
+            exporter.export_tile(aug_img, aug_mask, f"{img_name}_aug{aug_idx}")
 
 def main():
     raw_data_dir = "../data/train"
