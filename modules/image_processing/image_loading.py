@@ -6,12 +6,11 @@ class ImageLoader:
     def __init__(self, source_folder, destination_folder, logger_name):
         self.source_folder = source_folder
         self.destination_folder = destination_folder
-        self.images_folder = os.path.join(self.destination_folder, "images")
         self.logger = ColorLogger(logger_name).get_logger()
 
-        if not os.path.exists(self.images_folder):
-            os.makedirs(self.images_folder)
-            self.logger.info(f"Created directory: {self.images_folder}")
+        if not os.path.exists(self.destination_folder):
+            os.makedirs(self.destination_folder)
+            self.logger.info(f"Created directory: {self.destination_folder}")
 
     def load_images(self):
         images_by_index = {}
@@ -24,7 +23,7 @@ class ImageLoader:
 
             for filepath in glob.glob(os.path.join(folder_path, "*.tif")):
                 filename = os.path.basename(filepath)
-                file_index = self._extract_index(filename)
+                file_index = self.extract_index(filename)
                 if file_index not in images_by_index:
                     images_by_index[file_index] = {}
                 images_by_index[file_index][folder] = filepath
@@ -39,5 +38,5 @@ class ImageLoader:
         return images_by_index
 
     @staticmethod
-    def _extract_index(filename):
+    def extract_index(filename):
         return filename.split('_img')[1].split('.')[0]
