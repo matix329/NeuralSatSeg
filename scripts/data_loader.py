@@ -7,8 +7,8 @@ class DataLoader:
         self.num_classes = num_classes
 
     def load(self, image_dir, mask_dir):
-        image_paths = tf.data.Dataset.list_files(image_dir + "/*.png", shuffle=True)
-        mask_paths = tf.data.Dataset.list_files(mask_dir + "/*.png", shuffle=True)
+        image_paths = tf.data.Dataset.list_files(image_dir + "/*.tif", shuffle=True)
+        mask_paths = tf.data.Dataset.list_files(mask_dir + "/*.tif", shuffle=True)
 
         dataset = tf.data.Dataset.zip((image_paths, mask_paths))
         dataset = dataset.map(self.process_path, num_parallel_calls=tf.data.AUTOTUNE)
