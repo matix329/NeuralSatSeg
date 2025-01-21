@@ -1,4 +1,5 @@
 from tensorflow.keras import layers
+import tensorflow as tf
 
 def conv_block(inputs, filters, activation='relu', dropout_rate=0.3):
     x = layers.Conv2D(filters, kernel_size=(3, 3), activation=activation, padding='same')(inputs)
@@ -16,6 +17,8 @@ def encoder_block(inputs, filters, activation='relu', dropout_rate=0.3):
 
 def decoder_block(inputs, skip_features, filters, activation='relu', dropout_rate=0.3):
     x = layers.Conv2DTranspose(filters, kernel_size=(2, 2), strides=(2, 2), padding='same')(inputs)
-    x = layers.concatenate([x, skip_features])
+    height, width = tf.keras.backend.int_shape(x)[1:3]
+    skip_features = layers.Resizing(height=height, width=width, interpolation='nearest')(skip_features)
+    x = layers.Concatenate()([x, skip_features])
     x = conv_block(x, filters, activation=activation, dropout_rate=dropout_rate)
     return x
