@@ -6,17 +6,26 @@ class DataLoader:
         self.image_size = image_size
         self.num_classes = num_classes
 
-    def load(self, image_dir, mask_dir):
+    def load(self, image_dir, mask_dir=None):
         image_paths = tf.data.Dataset.list_files(f"{image_dir}/*.png", shuffle=True)
-        mask_paths = tf.data.Dataset.list_files(f"{mask_dir}/*.png", shuffle=True)
-        dataset = tf.data.Dataset.zip((image_paths, mask_paths))
 
-        def process(image_path, mask_path):
-            image = self.load_image(image_path)
-            mask = self.load_mask(mask_path)
-            return image, mask
+        if mask_dir:
+            mask_paths = tf.data.Dataset.list_files(f"{mask_dir}/*.png", shuffle=True)
+            dataset = tf.data.Dataset.zip((image_paths, mask_paths))
 
-        dataset = dataset.map(process, num_parallel_calls=tf.data.AUTOTUNE)
+            def process(image_path, mask_path):
+                image = self.load_image(image_path)
+                mask = self.load_mask(mask_path)
+                return image, mask
+
+            dataset = dataset.map(process, num_parallel_calls=tf.data.AUTOTUNE)
+        else:
+            def process(image_path):
+                image = self.load_image(image_path)
+                return image
+
+            dataset = image_paths.map(process, num_parallel_calls=tf.data.AUTOTUNE)
+
         dataset = dataset.batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
         return dataset
 
@@ -34,12 +43,3 @@ class DataLoader:
         mask = tf.ensure_shape(mask, [self.image_size[0], self.image_size[1], 1])
         mask = tf.math.round(mask)
         return mask
-
-    def process_path(self, image_path, mask_path):
-        image = tf.py_function(func=self.load_image, inp=[image_path], Tout=tf.float32)
-        mask = tf.py_function(func=self.load_mask, inp=[mask_path], Tout=tf.float32)
-
-        image.set_shape([self.image_size[0], self.image_size[1], 3])
-        mask.set_shape([self.image_size[0], self.image_size[1], 1])
-
-        return image, mask
