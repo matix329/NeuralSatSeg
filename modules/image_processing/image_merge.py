@@ -38,7 +38,7 @@ class ImageMerger:
                 self.logger.error(f"Failed to create a merged image for index {index}. Skipping...")
                 continue
 
-            output_path = os.path.join(self.output_folder, f"SN3_roads_train_img{index}.tif")
+            output_path = os.path.join(self.output_folder, f"SN3_roads_img{index}.tif")
             self.save_image(output_path, merged_image)
 
     def resize_image(self, image, target_shape, transform):
@@ -63,20 +63,20 @@ class ImageMerger:
 
     def combine_bands(self, bands):
         rgb = []
-        if "PS-RGB" in bands:
-            if bands["PS-RGB"].ndim == 2:
-                rgb = [bands["PS-RGB"]] * 3
+        if "RGB-PanSharpen" in bands:
+            if bands["RGB-PanSharpen"].ndim == 2:
+                rgb = [bands["RGB-PanSharpen"]] * 3
             else:
-                rgb = [bands["PS-RGB"][:, :, i] for i in range(3)]
+                rgb = [bands["RGB-PanSharpen"][:, :, i] for i in range(3)]
         elif "PAN" in bands:
             rgb = [bands["PAN"]] * 3
 
         multispectral = []
-        if "PS-MS" in bands:
-            if bands["PS-MS"].ndim == 2:
-                multispectral = [bands["PS-MS"]]
+        if "MUL-PanSharpen" in bands:
+            if bands["MUL-PanSharpen"].ndim == 2:
+                multispectral = [bands["MUL-PanSharpen"]]
             else:
-                multispectral = [bands["PS-MS"][:, :, i] for i in range(8)]
+                multispectral = [bands["MUL-PanSharpen"][:, :, i] for i in range(8)]
 
         if rgb:
             merged = np.stack(rgb + multispectral, axis=-1) if multispectral else np.stack(rgb, axis=-1)

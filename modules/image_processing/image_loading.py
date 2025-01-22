@@ -3,10 +3,11 @@ import glob
 from scripts.color_logger import ColorLogger
 
 class ImageLoader:
-    def __init__(self, source_folder, destination_folder, logger_name):
+    def __init__(self, source_folder, destination_folder, logger_name, supported_folders=None):
         self.source_folder = source_folder
         self.destination_folder = destination_folder
         self.logger = ColorLogger(logger_name).get_logger()
+        self.supported_folders = supported_folders if supported_folders else ["MS", "PAN", "PS-MS", "PS-RGB"]
 
         if not os.path.exists(self.destination_folder):
             os.makedirs(self.destination_folder)
@@ -14,7 +15,7 @@ class ImageLoader:
 
     def load_images(self):
         images_by_index = {}
-        for folder in ["MS", "PAN", "PS-MS", "PS-RGB"]:
+        for folder in self.supported_folders:
             folder_path = os.path.join(self.source_folder, folder)
 
             if not os.path.exists(folder_path):
