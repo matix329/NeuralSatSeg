@@ -34,9 +34,6 @@ class ModelTrainer:
         self.validate_directory(self.train_mask_dir, "Training mask")
         self.logger.info("Loading training data...")
         train_data = self.data_loader.load(self.train_image_dir, self.train_mask_dir)
-        for image_batch, mask_batch in train_data.take(1):
-            print(f"Image batch shape: {image_batch.shape}")
-            print(f"Mask batch shape: {mask_batch.shape}")
         return train_data
 
     def build_model(self, model_type):
@@ -50,7 +47,7 @@ class ModelTrainer:
         #self.logger.debug(f"Model summary:\n{model.summary()}")
         return model
 
-    def train(self, model_type, output_file, experiment_name, run_name, epochs=5):
+    def train(self, model_type, output_file, experiment_name, run_name, epochs=20):
         self.logger.info("Starting training process...")
         self.logger.info(f"Model type: {model_type}, Output file: {output_file}")
         mlflow.tensorflow.autolog(disable=True)
@@ -113,6 +110,7 @@ if __name__ == "__main__":
         base_output_file = input("Enter the name of the output file (e.g., 'unet_1'): ")
         output_file = f"{base_output_file}.keras"
         trainer = ModelTrainer(input_shape=(512, 512, 3))
-        trainer.train(model_type=model_type, output_file=output_file, experiment_name=experiment_name, run_name=run_name)
+        trainer.train(model_type=model_type, output_file=output_file, experiment_name=experiment_name,
+                      run_name=run_name)
     except Exception as e:
         logger.error(f"An error occurred: {e}")
