@@ -11,13 +11,13 @@ def prepare_data(stage="all"):
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../NeuralSatSeg'))
     source_folder = os.path.join(BASE_DIR, "data/train/roads")
     geojson_folder = os.path.join(source_folder, "geojson_roads")
-    destination_folder = os.path.join(BASE_DIR, "data/processed/roads")
+    destination_folder = os.path.join(BASE_DIR, "data/processed/train/roads")
     images_folder = os.path.join(destination_folder, "images")
     masks_folder = os.path.join(destination_folder, "masks")
     processed_images_folder = os.path.join(destination_folder, "processed_images")
     processed_masks_folder = os.path.join(destination_folder, "processed_masks")
 
-    color_logger = ColorLogger("Data Preparation")
+    color_logger = ColorLogger("Training Data Preparation")
     logger = color_logger.get_logger()
 
     os.makedirs(images_folder, exist_ok=True)
