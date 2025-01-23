@@ -10,7 +10,7 @@ from scripts.tensorboard import TensorboardManager
 import numpy as np
 
 class ModelTrainer:
-    def __init__(self, input_shape=(512, 512, 3), num_classes=1, batch_size=32):
+    def __init__(self, input_shape=(512, 512, 3), num_classes=1, batch_size=16):
         self.logger = ColorLogger("ModelTrainer").get_logger()
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         self.train_data_dir = os.path.join(project_root, "data/processed/train/roads")
@@ -52,7 +52,7 @@ class ModelTrainer:
             raise ValueError(f"Unsupported model type: {model_type}. Supported models are: {', '.join(supported_models.keys())}")
         return supported_models[model_type.lower()]()
 
-    def train(self, model_type, output_file, experiment_name, run_name, epochs=40):
+    def train(self, model_type, output_file, experiment_name, run_name, epochs=30):
         self.logger.info("Starting training process...")
         mlflow.tensorflow.autolog(disable=True)
         self.mlflow_manager = MLflowManager(experiment_name)
