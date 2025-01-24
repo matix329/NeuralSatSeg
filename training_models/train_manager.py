@@ -61,12 +61,16 @@ class ModelTrainer:
         train_data = self.load_train_data()
         test_images = self.load_test_data()
 
+        learning_rate = 0.0001
+
         model = self.build_model(model_type)
         model.compile(
-            optimizer=Adam(learning_rate=0.001),
+            optimizer=Adam(learning_rate=learning_rate),
             loss="binary_crossentropy",
             metrics=["accuracy"]
         )
+
+        actual_learning_rate = model.optimizer.learning_rate.numpy()
 
         self.mlflow_manager.log_params({
             "model_type": model_type,
@@ -74,7 +78,7 @@ class ModelTrainer:
             "num_classes": self.num_classes,
             "batch_size": self.batch_size,
             "epochs": epochs,
-            "learning_rate": 0.001
+            "learning_rate": actual_learning_rate
         })
 
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
