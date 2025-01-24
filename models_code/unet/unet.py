@@ -10,13 +10,11 @@ class UNET:
         self.dropout_rate = dropout_rate
         self.output_activation = output_activation
         self.datagen = ImageDataGenerator(
-            rotation_range=20,
-            width_shift_range=0.1,
-            height_shift_range=0.1,
-            zoom_range=0.2,
-            horizontal_flip=True,
-            vertical_flip=True,
-            fill_mode='nearest'
+            rotation_range=10,
+            width_shift_range=0.05,
+            height_shift_range=0.05,
+            zoom_range=0.1,
+            horizontal_flip=True
         )
 
     def build_model(self):
