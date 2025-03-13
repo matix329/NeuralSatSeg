@@ -32,14 +32,14 @@ class DataLoader:
     def load_image(self, image_path):
         image = tf.io.read_file(image_path)
         image = tf.image.decode_image(image, channels=3, expand_animations=False)
-        image = tf.image.resize(image, self.image_size) / 255.0
+        image = tf.image.resize_image(image, self.image_size) / 255.0
         image = tf.ensure_shape(image, [self.image_size[0], self.image_size[1], 3])
         return image
 
     def load_mask(self, mask_path):
         mask = tf.io.read_file(mask_path)
         mask = tf.image.decode_png(mask, channels=1)
-        mask = tf.image.resize(mask, self.image_size)
+        mask = tf.image.resize_image(mask, self.image_size)
         mask = tf.ensure_shape(mask, [self.image_size[0], self.image_size[1], 1])
         mask = tf.math.round(mask)
         return mask

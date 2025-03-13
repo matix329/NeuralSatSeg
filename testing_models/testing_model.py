@@ -56,7 +56,7 @@ def predict_and_save_results(model, test_images_dir, output_dir, image_size=(512
     for i, image_path in enumerate(image_paths):
         try:
             image = tf.image.decode_png(tf.io.read_file(image_path), channels=3)
-            image = tf.image.resize(image, image_size) / 255.0
+            image = tf.image.resize_image(image, image_size) / 255.0
             image = tf.expand_dims(image, axis=0)
 
             prediction = model.predict(image, verbose=0)[0, :, :, 0]

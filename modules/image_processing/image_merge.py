@@ -5,6 +5,7 @@ from rasterio.enums import Resampling
 from scripts.color_logger import ColorLogger
 import warnings
 from rasterio.errors import NotGeoreferencedWarning
+from concurrent.futures import ThreadPoolExecutor
 
 warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
 
@@ -13,23 +14,38 @@ class ImageMerger:
         self.output_folder = output_folder
         self.logger = ColorLogger(logger_name).get_logger()
 
+    @staticmethod
+    def normalize_band(band):
+        min_val, max_val = np.min(band), np.max(band)
+        if min_val == max_val:
+            return np.zeros_like(band, dtype=np.uint8)
+        band = (band - min_val) / (max_val - min_val)
+        band = np.clip(band * 255, 0, 255).astype(np.uint8)
+        return band
+
+    def process_band(self, folder, file_path, reference_shape):
+        try:
+            with rasterio.open(file_path) as src:
+                data = src.read(1, resampling=Resampling.bilinear)
+                if data.shape != reference_shape:
+                    data = self.resize_image(data, reference_shape, src.transform)
+                normalized_band = self.normalize_band(data)
+                self.logger.info(f"Loaded and resized band from {file_path}")
+                return folder, normalized_band
+        except Exception as e:
+            self.logger.error(f"Error loading band from {file_path}: {e}")
+            return None
+
     def merge_images(self, images_by_index):
         for index, images in images_by_index.items():
-            bands = {}
             reference_shape = (1300, 1300)
 
-            for folder, file_path in images.items():
-                try:
-                    with rasterio.open(file_path) as src:
-                        data = src.read(1, resampling=Resampling.bilinear)
-                        if data.shape != reference_shape:
-                            data = self.resize_image(data, reference_shape, src.transform)
-                        bands[folder] = self.normalize_band(data)
-                        self.logger.info(f"Loaded and resized band from {file_path}")
-                except Exception as e:
-                    self.logger.error(f"Error loading band from {file_path}: {e}")
+            with ThreadPoolExecutor() as executor:
+                results = executor.map(lambda item: self.process_band(item[0], item[1], reference_shape), images.items())
 
-            if len(bands) == 0:
+            bands = {folder: band for folder, band in results if folder is not None}
+
+            if not bands:
                 self.logger.error(f"No bands found for index {index}. Skipping...")
                 continue
 
@@ -54,12 +70,6 @@ class ImageMerger:
             resampling=Resampling.bilinear,
         )
         return new_image
-
-    def normalize_band(self, band):
-        min_val, max_val = band.min(), band.max()
-        if min_val == max_val:
-            return np.zeros_like(band, dtype=np.uint8)
-        return ((band - min_val) / (max_val - min_val) * 255).astype(np.uint8)
 
     def combine_bands(self, bands):
         rgb = []

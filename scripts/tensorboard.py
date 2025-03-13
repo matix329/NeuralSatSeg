@@ -1,7 +1,6 @@
 import os
 from tensorflow.keras.callbacks import TensorBoard
 
-
 class TensorboardManager:
     def __init__(self, log_dir="../mlflow_artifacts/tensorboard_logs", histogram_freq=1, write_graph=True,
                  write_images=False):
