@@ -1,12 +1,12 @@
 import os
+import rasterio
+from rasterio.enums import Resampling
+from PIL import Image
 from modules.image_processing.image_loading import ImageLoader
 from modules.image_processing.image_merge import ImageMerger
 from modules.preprocessing.preprocessing import Preprocessing
 from modules.resizer.resizer import ImageMaskResizer
 from scripts.color_logger import ColorLogger
-import tensorflow as tf
-import rasterio
-from rasterio.enums import Resampling
 
 def prepare_data(stage="all"):
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../NeuralSatSeg'))
@@ -43,7 +43,8 @@ def prepare_data(stage="all"):
                         data = src.read(1, resampling=Resampling.bilinear)
                         if data.shape != reference_shape:
                             data = image_merger.resize_image(data, reference_shape, src.transform)
-                        bands[folder] = image_merger.normalize_band(data)
+
+                        bands[folder] = image_merger.normalize_band(data)  # Poprawiona literówka
                         logger.info(f"Loaded and resized band from {file_path}")
                 except Exception as e:
                     logger.error(f"Error loading band from {file_path}: {e}")
@@ -65,22 +66,25 @@ def prepare_data(stage="all"):
         preprocessing = Preprocessing(image_size=(1300, 1300))
 
         for image_name in os.listdir(images_folder):
-            if not image_name.lower().endswith((
-                '.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif', '.tif')):
+            if not image_name.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif', '.tif')):
                 logger.warning(f"Skipping non-image file: {image_name}")
                 continue
+
             image_path = os.path.join(images_folder, image_name)
             processed_image = preprocessing.load_and_preprocess_image(image_path)
 
             processed_image_name = os.path.splitext(image_name)[0] + ".png"
             processed_image_path = os.path.join(processed_images_folder, processed_image_name)
-            tf.keras.utils.save_img(processed_image_path, processed_image.numpy())
+
+            img = Image.fromarray((processed_image * 255).astype("uint8"))
+            img.save(processed_image_path, "PNG")
+
             logger.info(f"Saved processed image: {processed_image_path}")
 
     def resize_images():
         logger.info("Resizing images to target size (512x512)...")
         resizer = ImageMaskResizer(target_size=(512, 512))
-        resizer.resize(processed_images_folder, processed_images_folder)
+        resizer.resize_image(processed_images_folder, processed_images_folder)
 
     if stage == "all":
         process_images()

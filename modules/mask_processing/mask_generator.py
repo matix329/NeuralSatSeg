@@ -1,9 +1,9 @@
 import os
 import geopandas as gpd
 import rasterio
+import numpy as np
 from rasterio.features import rasterize
 from shapely.geometry import mapping
-import numpy as np
 
 class MaskGenerator:
     def __init__(self, geojson_folder, masks_folder, output_size=(1300, 1300), line_width=1):
@@ -41,7 +41,7 @@ class MaskGenerator:
             all_touched=True
         )
 
-        mask[mask > 0] = 1
+        mask = np.where(mask > 0, 1, 0)
 
         with rasterio.open(
             output_path, 'w',
