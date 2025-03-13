@@ -66,7 +66,7 @@ class ModelTrainer:
             raise ValueError(f"Unsupported model type: {model_type}. Supported models are: {', '.join(supported_models.keys())}")
         return supported_models[model_type.lower()]()
 
-    def train(self, model_type, output_file, experiment_name, run_name):
+    def train(self, model_type, output_file, experiment_name, run_name, description):
         if not self.confirm_training():
             self.logger.info("Training cancelled.")
             return
@@ -75,6 +75,8 @@ class ModelTrainer:
         mlflow.tensorflow.autolog(disable=True)
         self.mlflow_manager = MLflowManager(experiment_name)
         self.mlflow_manager.start_run(run_name=run_name)
+
+        mlflow.set_tag("description", description)
 
         train_data = self.load_train_data()
         test_images = self.load_test_data()
@@ -142,6 +144,8 @@ if __name__ == "__main__":
     try:
         experiment_name = input("Enter the name of the experiment: ")
         run_name = input("Enter the name of the model/run: ")
+        description = input("Enter a description for the experiment: ")
+
         model_type = None
         while model_type not in ["unet", "cnn"]:
             model_type = input("Enter the model type (unet/cnn): ").lower()
@@ -149,6 +153,6 @@ if __name__ == "__main__":
         output_file = f"{base_output_file}.keras"
         trainer = ModelTrainer()
         trainer.train(model_type=model_type, output_file=output_file, experiment_name=experiment_name,
-                      run_name=run_name)
+                      run_name=run_name, description=description)
     except Exception as e:
         logger.error(f"An error occurred: {e}")
