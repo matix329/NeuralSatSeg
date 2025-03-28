@@ -34,9 +34,12 @@ class Preprocessing:
 
     def load_and_preprocess_mask(self, mask_path, as_rgb=False):
         mask_path = self.handle_file_format(mask_path)
+
         if as_rgb:
-            mask = cv2.imread(mask_path, cv2.IMREAD_COLOR)
+            img = cv2.imread(mask_path, cv2.IMREAD_COLOR)
         else:
             img = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
         img = cv2.resize(img, self.image_size, interpolation=cv2.INTER_AREA)
-        return img.astype(np.uint8)
+        img = np.where(img > 0, 1, 0).astype(np.uint8)
+        return img

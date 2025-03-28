@@ -84,7 +84,7 @@ def prepare_data(stage="all"):
     def resize_images():
         logger.info("Resizing images to target size (512x512)...")
         resizer = ImageMaskResizer(target_size=(512, 512))
-        resizer.resize_image(processed_images_folder, processed_images_folder)
+        resizer.resize_directory(processed_images_folder, processed_images_folder)
 
     if stage == "all":
         process_images()

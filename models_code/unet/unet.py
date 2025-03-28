@@ -3,7 +3,7 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from models_code.unet.blocks import conv_block, encoder_block, decoder_block
 
 class UNET:
-    def __init__(self, input_shape=(512, 512, 3), num_classes=1, activation='leaky_relu', dropout_rate=0.4, output_activation='sigmoid'):
+    def __init__(self, input_shape=(512, 512, 4), num_classes=1, activation='leaky_relu', dropout_rate=0.4, output_activation='sigmoid'):
         self.input_shape = input_shape
         self.num_classes = num_classes
         self.activation = activation
