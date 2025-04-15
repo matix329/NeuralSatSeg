@@ -1,43 +1,60 @@
 import os
-import glob
-from scripts.color_logger import ColorLogger
+import numpy as np
+import rasterio
+import re
+from typing import Dict
+
+from .image_merge import ImageMerger
 
 class ImageLoader:
-    def __init__(self, source_folder, destination_folder, logger_name, supported_folders=None):
-        self.source_folder = source_folder
-        self.destination_folder = destination_folder
-        self.logger = ColorLogger(logger_name).get_logger()
-        self.supported_folders = supported_folders if supported_folders else ["MS", "PAN", "PS-MS", "PS-RGB"]
+    def __init__(self, image_dir: str):
+        self.image_dir = image_dir
+        self.image_dict = self.group_images_by_id()
 
-        if not os.path.exists(self.destination_folder):
-            os.makedirs(self.destination_folder)
-            self.logger.info(f"Created directory: {self.destination_folder}")
-
-    def load_images(self):
-        images_by_index = {}
-        for folder in self.supported_folders:
-            folder_path = os.path.join(self.source_folder, folder)
-
-            if not os.path.exists(folder_path):
-                self.logger.warning(f"Folder {folder_path} does not exist. Skipping...")
+    def group_images_by_id(self) -> Dict[str, Dict[str, str]]:
+        image_dict = {}
+        for fname in os.listdir(self.image_dir):
+            img_id = self.extract_img_id(fname)
+            if img_id is None:
                 continue
 
-            for filepath in glob.glob(os.path.join(folder_path, "*.tif")):
-                filename = os.path.basename(filepath)
-                file_index = self.extract_index(filename)
-                if file_index not in images_by_index:
-                    images_by_index[file_index] = {}
-                images_by_index[file_index][folder] = filepath
+            if 'PS-RGB' in fname:
+                img_type = 'PS-RGB'
+            elif 'PS-MS' in fname:
+                img_type = 'PS-MS'
+            elif '_MS_' in fname:
+                img_type = 'MS'
+            elif '_PAN_' in fname:
+                img_type = 'PAN'
+            else:
+                continue
 
-            self.logger.info(f"Processed folder: {folder_path}")
+            if img_id not in image_dict:
+                image_dict[img_id] = {}
+            image_dict[img_id][img_type] = os.path.join(self.image_dir, fname)
 
-        if not images_by_index:
-            self.logger.error("No images were loaded. Check your source folder.")
-        else:
-            self.logger.info(f"Loaded images for {len(images_by_index)} map fragments.")
+        return image_dict
 
-        return images_by_index
+    def extract_img_id(self, fname: str) -> str:
+        match = re.search(r'img\d+', fname)
+        return match.group(0) if match else None
 
-    @staticmethod
-    def extract_index(filename):
-        return filename.split('_img')[1].split('.')[0]
+    def load_all(self) -> Dict[str, np.ndarray]:
+        merger = ImageMerger()
+        loaded = {}
+        for img_id, modalities in self.image_dict.items():
+            if all(key in modalities for key in ['MS', 'PAN', 'PS-MS', 'PS-RGB']):
+                merged = merger.merge_images_to_arrays({img_id: modalities})[img_id]
+                loaded[img_id] = merged
+            else:
+                print(f"[WARNING] Missing modalities for {img_id}, skipping.")
+        return loaded
+
+    def merge_modalities(self, paths: Dict[str, str]) -> np.ndarray:
+        arrays = []
+        for key in ['MS', 'PAN', 'PS-MS', 'PS-RGB']:
+            path = paths[key]
+            with rasterio.open(path) as src:
+                arr = src.read()
+            arrays.append(arr)
+        return np.concatenate(arrays, axis=0)
