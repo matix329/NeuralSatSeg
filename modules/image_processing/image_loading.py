@@ -18,7 +18,6 @@ class ImageLoader:
         self.image_dict = self.group_images_by_id()
 
     def find_image_files(self) -> Dict[str, str]:
-        """Znajduje wszystkie pliki obrazów w katalogu i podkatalogach"""
         image_files = {}
         for root, _, files in os.walk(self.image_dir):
             for fname in files:
@@ -63,7 +62,6 @@ class ImageLoader:
         return match.group(0) if match else None
 
     def resize_image(self, image: np.ndarray, original_transform) -> np.ndarray:
-        """Przeskalowuje obraz do docelowego rozmiaru"""
         from rasterio.warp import reproject
         target_shape = (image.shape[0], self.target_size[0], self.target_size[1])
         destination = np.zeros(target_shape, dtype=image.dtype)
@@ -94,7 +92,6 @@ class ImageLoader:
             raise
 
     def process_batch(self, batch_items: list) -> Dict[str, np.ndarray]:
-        """Przetwarza partię obrazów"""
         batch_result = {}
         for img_id, modalities in batch_items:
             try:
@@ -116,20 +113,16 @@ class ImageLoader:
         return batch_result
 
     def load_all(self) -> Generator[Dict[str, np.ndarray], None, None]:
-        """Wczytuje obrazy w partiach i zwraca generator"""
         total_sets = len(self.image_dict)
         processed_sets = 0
         missing_modalities = 0
 
-        # Konwertuj słownik na listę par (klucz, wartość)
         items = list(self.image_dict.items())
-        
-        # Przetwarzaj w partiach
+
         for i in range(0, len(items), self.batch_size):
             batch = items[i:i + self.batch_size]
             batch_result = self.process_batch(batch)
-            
-            # Zliczaj brakujące modalności
+
             for img_id, _ in batch:
                 if img_id not in batch_result:
                     missing_modalities += 1
@@ -138,8 +131,7 @@ class ImageLoader:
             logger.info(f"Processed {processed_sets}/{total_sets} image sets")
             
             yield batch_result
-            
-            # Zwolnij pamięć
+
             del batch_result
             gc.collect()
 

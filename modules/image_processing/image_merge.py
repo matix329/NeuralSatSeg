@@ -38,7 +38,6 @@ class ImageMerger:
         for key, image_array in images_by_key.items():
             try:
                 logger.debug(f"Processing image {key}")
-                # Normalizuj każdy kanał
                 normalized_channels = []
                 for band_idx in range(image_array.shape[0]):
                     band = image_array[band_idx]
