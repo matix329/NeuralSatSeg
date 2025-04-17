@@ -3,6 +3,7 @@ import time
 import numpy as np
 import cv2
 import logging
+import re
 
 from image_processing.image_loading import ImageLoader
 from image_processing.image_merge import ImageMerger
@@ -16,7 +17,6 @@ logger = logging.getLogger(__name__)
 class DataPreparator:
     def __init__(self, base_dir, image_size=(1300, 1300), test_size=0.2, seed=42, batch_size=10):
         self.base_dir = base_dir
-        logger.info(f"Initializing DataPreparator with base_dir: {base_dir}")
         
         self.source_folder = os.path.join(base_dir, "data/train/roads")
         if not os.path.exists(self.source_folder):
@@ -55,36 +55,40 @@ class DataPreparator:
         total_processed = 0
         total_errors = 0
 
+        geojson_files = {}
+        for f in os.listdir(self.geojson_folder):
+            if not f.endswith(".geojson"):
+                continue
+            match = re.search(r'img(\d+)', f)
+            if match:
+                img_num = match.group(1)
+                geojson_files[img_num] = f
+
         for batch in loader.load_all():
             for img_id, image in batch.items():
                 try:
                     if np.all(image == 0):
-                        logger.warning(f"Image {img_id} is completely black before processing!")
                         continue
                     
-                    suffix = next((p for p in img_id.split("_") if p.startswith("img")), None)
-                    if not suffix:
-                        logger.warning(f"Could not extract imgXXXX from key: {img_id}")
+                    match = re.search(r'img(\d+)', img_id)
+                    if not match:
                         total_errors += 1
                         continue
 
-                    geojson_candidates = [
-                        f for f in os.listdir(self.geojson_folder)
-                        if f.endswith(".geojson") and suffix in f
-                    ]
-
-                    if not geojson_candidates:
-                        logger.warning(f"GeoJSON not found for key: {img_id}")
+                    img_num = match.group(1)
+                    
+                    if img_num not in geojson_files:
                         total_errors += 1
                         continue
 
-                    geojson_path = os.path.join(self.geojson_folder, geojson_candidates[0])
+                    matching_geojson = geojson_files[img_num]
+                    geojson_path = os.path.join(self.geojson_folder, matching_geojson)
                     mask_array = mask_generator.generate_mask_from_array(geojson_path)
                     
                     if np.all(mask_array == 0):
-                        logger.warning(f"Mask for {img_id} is completely black!")
+                        continue
                     
-                    self.data.append((img_id, image, mask_array))
+                    self.data.append((f"img{img_num}", image, mask_array))
                     total_processed += 1
                     
                     if total_processed % 100 == 0:
@@ -102,7 +106,6 @@ class DataPreparator:
             image = image.copy()
             
             if np.all(image == 0):
-                logger.warning(f"Image is completely black before saving: {path}")
                 return
             
             if "masks" in path:
@@ -136,7 +139,6 @@ class DataPreparator:
                 image = np.expand_dims(image, axis=-1)
             
             if np.all(image == 0):
-                logger.warning(f"Image is completely black after processing: {path}")
                 return
             
             cv2.imwrite(path, image)
@@ -166,7 +168,6 @@ class DataPreparator:
                     logger.error(f"Error saving {index}: {str(e)}")
 
     def run(self, stage="all"):
-        logger.info(f"Starting data preparation with stage: {stage}")
         start_time = time.time()
         
         try:
@@ -191,7 +192,5 @@ class DataPreparator:
 
 if __name__ == "__main__":
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    logger.info(f"Base directory set to: {base_dir}")
-    
     preparator = DataPreparator(base_dir=base_dir, batch_size=5)
     preparator.run(stage="all")
