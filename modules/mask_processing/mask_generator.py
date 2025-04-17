@@ -15,10 +15,9 @@ class MaskGenerator:
         if gdf.empty:
             raise ValueError(f"GeoJSON file {geojson_path} is empty or invalid.")
 
-        if apply_transform:
-            gdf = gdf.to_crs("EPSG:3857")
-            gdf["geometry"] = gdf["geometry"].buffer(self.line_width * 0.5)
-            gdf = gdf.to_crs("EPSG:4326")
+        gdf = gdf.to_crs("EPSG:3857")
+        gdf["geometry"] = gdf["geometry"].buffer(self.line_width * 0.5)
+        gdf = gdf.to_crs("EPSG:4326")
 
         bounds = gdf.total_bounds
         transform = rasterio.transform.from_bounds(
@@ -39,7 +38,7 @@ class MaskGenerator:
             all_touched=True
         )
 
-        return np.where(mask > 0, 1, 0), bounds, transform
+        return np.where(mask > 0, 255, 0), bounds, transform
 
     def generate_mask(self, geojson_path, output_path):
         mask, bounds, transform = self.prepare_mask(geojson_path, apply_transform=True)
@@ -59,5 +58,5 @@ class MaskGenerator:
         return output_path, bounds, mask
 
     def generate_mask_from_array(self, geojson_path: str) -> np.ndarray:
-        mask, _, _ = self.prepare_mask(geojson_path, apply_transform=False)
+        mask, _, _ = self.prepare_mask(geojson_path, apply_transform=True)
         return mask

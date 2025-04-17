@@ -105,17 +105,23 @@ class DataPreparator:
                 logger.warning(f"Image is completely black before saving: {path}")
                 return
             
-            if image.dtype == np.float32 or image.dtype == np.float64:
-                min_val = np.min(image)
-                max_val = np.max(image)
-                if max_val > min_val:
-                    image = ((image - min_val) / (max_val - min_val) * 255).astype(np.uint8)
-                else:
+            if "masks" in path:
+                if np.max(image) == 1:
                     image = (image * 255).astype(np.uint8)
-            elif image.dtype == np.uint16:
-                image = (image / 8).astype(np.uint8)
-            elif image.dtype != np.uint8:
-                image = image.astype(np.uint8)
+                elif np.max(image) == 255:
+                    image = image.astype(np.uint8)
+            else:
+                if image.dtype == np.float32 or image.dtype == np.float64:
+                    min_val = np.min(image)
+                    max_val = np.max(image)
+                    if max_val > min_val:
+                        image = ((image - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+                    else:
+                        image = (image * 255).astype(np.uint8)
+                elif image.dtype == np.uint16:
+                    image = (image / 8).astype(np.uint8)
+                elif image.dtype != np.uint8:
+                    image = image.astype(np.uint8)
             
             if len(image.shape) == 3 and image.shape[0] > 3:
                 if "masks" in path:
