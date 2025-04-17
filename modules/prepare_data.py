@@ -41,7 +41,6 @@ class DataPreparator:
 
         for path in [self.train_image_dir, self.train_mask_dir, self.val_image_dir, self.val_mask_dir]:
             os.makedirs(path, exist_ok=True)
-            logger.info(f"Created directory: {path}")
 
     def process_images_and_masks(self):
         logger.info("Starting image and mask processing")
@@ -59,6 +58,10 @@ class DataPreparator:
         for batch in loader.load_all():
             for img_id, image in batch.items():
                 try:
+                    if np.all(image == 0):
+                        logger.warning(f"Image {img_id} is completely black before processing!")
+                        continue
+                    
                     suffix = next((p for p in img_id.split("_") if p.startswith("img")), None)
                     if not suffix:
                         logger.warning(f"Could not extract imgXXXX from key: {img_id}")
@@ -78,6 +81,9 @@ class DataPreparator:
                     geojson_path = os.path.join(self.geojson_folder, geojson_candidates[0])
                     mask_array = mask_generator.generate_mask_from_array(geojson_path)
                     
+                    if np.all(mask_array == 0):
+                        logger.warning(f"Mask for {img_id} is completely black!")
+                    
                     self.data.append((img_id, image, mask_array))
                     total_processed += 1
                     
@@ -92,26 +98,42 @@ class DataPreparator:
         logger.info(f"Processing completed. Successfully processed: {total_processed}, Errors: {total_errors}")
 
     def save_image(self, image: np.ndarray, path: str):
-        """Zapisuje obraz w formacie PNG"""
         try:
-            # Normalizuj obraz do zakresu 0-255
-            if image.dtype != np.uint8:
-                image = (image * 255).astype(np.uint8)
+            image = image.copy()
             
-            # Jeśli obraz ma więcej niż 3 kanały, zapisz tylko pierwsze 3
+            if np.all(image == 0):
+                logger.warning(f"Image is completely black before saving: {path}")
+                return
+            
+            if image.dtype == np.float32 or image.dtype == np.float64:
+                min_val = np.min(image)
+                max_val = np.max(image)
+                if max_val > min_val:
+                    image = ((image - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+                else:
+                    image = (image * 255).astype(np.uint8)
+            elif image.dtype == np.uint16:
+                image = (image / 8).astype(np.uint8)
+            elif image.dtype != np.uint8:
+                image = image.astype(np.uint8)
+            
             if len(image.shape) == 3 and image.shape[0] > 3:
-                image = image[:3]
+                if "masks" in path:
+                    image = image[0]
+                else:
+                    image = image[-3:]
             
-            # Transponuj obraz do formatu (height, width, channels)
             if len(image.shape) == 3:
                 image = np.transpose(image, (1, 2, 0))
             
-            # Upewnij się, że obraz ma odpowiedni format
             if len(image.shape) == 2:
                 image = np.expand_dims(image, axis=-1)
             
+            if np.all(image == 0):
+                logger.warning(f"Image is completely black after processing: {path}")
+                return
+            
             cv2.imwrite(path, image)
-            logger.debug(f"Successfully saved image to {path}")
         except Exception as e:
             logger.error(f"Error saving image to {path}: {str(e)}")
             raise

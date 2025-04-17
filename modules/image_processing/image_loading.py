@@ -97,14 +97,19 @@ class ImageLoader:
             try:
                 if all(key in modalities for key in ['MS', 'PAN', 'PS-MS', 'PS-RGB']):
                     logger.debug(f"Loading all modalities for {img_id}")
-                    loaded_channels = []
-                    
-                    for modality in ['MS', 'PAN', 'PS-MS', 'PS-RGB']:
-                        path = modalities[modality]
-                        image_data = self.load_image(path)
-                        loaded_channels.append(image_data)
-                    
-                    merged = np.concatenate(loaded_channels, axis=0)
+
+                    ms_image = self.load_image(modalities['MS'])
+                    pan_image = self.load_image(modalities['PAN'])
+                    ps_ms_image = self.load_image(modalities['PS-MS'])
+                    ps_rgb_image = self.load_image(modalities['PS-RGB'])
+
+                    ms_rgb = ms_image[:3]
+                    ps_ms_rgb = ps_ms_image[:3]
+
+                    pan_rgb = pan_image
+                    ps_rgb = ps_rgb_image
+
+                    merged = np.concatenate([ms_rgb, pan_rgb, ps_ms_rgb, ps_rgb], axis=0)
                     batch_result[img_id] = merged
                     logger.debug(f"Successfully loaded and merged all modalities for {img_id}")
             except Exception as e:
