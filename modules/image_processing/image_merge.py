@@ -1,11 +1,13 @@
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ImageMerger:
-    def __init__(self, reference_shape=(1300, 1300), logger=None):
+    def __init__(self, reference_shape=(1300, 1300)):
         self.reference_shape = reference_shape
-        self.logger = logger
 
     def normalize_band(self, band):
         min_val, max_val = np.min(band), np.max(band)
@@ -31,27 +33,28 @@ class ImageMerger:
 
     def merge_images_to_arrays(self, images_by_key):
         result = {}
+        logger.info(f"Starting to merge {len(images_by_key)} images")
 
-        for key, channel_paths in images_by_key.items():
-            merged_channels = []
+        for key, image_array in images_by_key.items():
+            try:
+                logger.debug(f"Processing image {key}")
+                # Normalizuj każdy kanał
+                normalized_channels = []
+                for band_idx in range(image_array.shape[0]):
+                    band = image_array[band_idx]
+                    if band.shape != self.reference_shape:
+                        logger.debug(f"Resizing band {band_idx} from {band.shape} to {self.reference_shape}")
+                        band = self.resize_band(band, None, band.shape)
+                    normalized_band = self.normalize_band(band)
+                    normalized_channels.append(normalized_band)
 
-            for channel, path in channel_paths.items():
-                try:
-                    with rasterio.open(path) as src:
-                        data = src.read()
-                        for band_idx in range(data.shape[0]):
-                            band = data[band_idx]
-                            if band.shape != self.reference_shape:
-                                band = self.resize_band(band, src.transform, band.shape)
-                            band = self.normalize_band(band)
-                            merged_channels.append(band)
-                except Exception as e:
-                    if self.logger:
-                        self.logger.error(f"Failed to load {path}: {e}")
-                    continue
+                merged_array = np.stack(normalized_channels, axis=0)
+                result[key] = merged_array
+                logger.debug(f"Successfully merged image {key} with shape {merged_array.shape}")
+                
+            except Exception as e:
+                logger.error(f"Failed to process image {key}: {str(e)}")
+                continue
 
-            if merged_channels:
-                merged = np.stack(merged_channels, axis=-1)
-                result[key] = merged
-
+        logger.info(f"Successfully merged {len(result)} images")
         return result
