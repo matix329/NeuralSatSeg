@@ -6,16 +6,16 @@ import logging
 import re
 
 from image_processing.image_loading import ImageLoader
-from image_processing.image_merge import ImageMerger
-from preprocessing.preprocessing import Preprocessing
 from mask_processing.mask_generator import MaskGenerator
 from splitter.splitter import Splitter
+from image_filtering.image_filtering import ImageFilter
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class DataPreparator:
-    def __init__(self, base_dir, image_size=(1300, 1300), test_size=0.2, seed=42, batch_size=10):
+    def __init__(self, base_dir, image_size=(1300, 1300), test_size=0.2, seed=42, batch_size=10,
+                 black_threshold=0.1, min_content_ratio=0.95):
         self.base_dir = base_dir
         
         self.source_folder = os.path.join(base_dir, "data/train/roads")
@@ -33,6 +33,8 @@ class DataPreparator:
         self.test_size = test_size
         self.seed = seed
         self.batch_size = batch_size
+        self.black_threshold = black_threshold
+        self.min_content_ratio = min_content_ratio
 
         self.train_image_dir = os.path.join(self.output_base, "train/roads/images")
         self.train_mask_dir = os.path.join(self.output_base, "train/roads/masks")
@@ -167,6 +169,17 @@ class DataPreparator:
                 except Exception as e:
                     logger.error(f"Error saving {index}: {str(e)}")
 
+    def filter_processed_data(self):
+        logger.info("Starting image filtering")
+        image_filter = ImageFilter(
+            processed_dir=self.output_base,
+            black_threshold=self.black_threshold,
+            min_content_ratio=self.min_content_ratio
+        )
+        stats = image_filter.run()
+        logger.info(f"Filtering completed. {stats['kept_images']} images kept, {stats['removed_images']} images removed")
+        return stats
+
     def run(self, stage="all"):
         start_time = time.time()
         
@@ -174,10 +187,13 @@ class DataPreparator:
             if stage == "all":
                 self.process_images_and_masks()
                 self.split_data()
+                self.filter_processed_data()
             elif stage == "process":
                 self.process_images_and_masks()
             elif stage == "split":
                 self.split_data()
+            elif stage == "filter":
+                self.filter_processed_data()
             else:
                 logger.error(f"Unknown stage: {stage}")
                 return
@@ -188,7 +204,6 @@ class DataPreparator:
         except Exception as e:
             logger.error(f"Error during data preparation: {str(e)}")
             raise
-
 
 if __name__ == "__main__":
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
