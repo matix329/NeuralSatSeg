@@ -14,15 +14,15 @@ class ImageFilter:
         self.black_threshold = black_threshold
         self.min_content_ratio = min_content_ratio
 
-        self.train_image_dir = os.path.join(processed_dir, "train/roads/images")
-        self.train_mask_dir = os.path.join(processed_dir, "train/roads/masks")
-        self.val_image_dir = os.path.join(processed_dir, "val/roads/images")
-        self.val_mask_dir = os.path.join(processed_dir, "val/roads/masks")
+        self.roads_image_dir = os.path.join(processed_dir, "temp/roads/images")
+        self.roads_mask_dir = os.path.join(processed_dir, "temp/roads/masks")
+        self.buildings_image_dir = os.path.join(processed_dir, "temp/buildings/images")
+        self.buildings_mask_dir = os.path.join(processed_dir, "temp/buildings/masks")
 
-        for dir_path in [self.train_image_dir, self.train_mask_dir,
-                         self.val_image_dir, self.val_mask_dir]:
+        for dir_path in [self.roads_image_dir, self.roads_mask_dir,
+                        self.buildings_image_dir, self.buildings_mask_dir]:
             if not os.path.exists(dir_path):
-                raise FileNotFoundError(f"Directory not found: {dir_path}")
+                os.makedirs(dir_path, exist_ok=True)
 
     def analyze_image(self, image_path: str) -> Tuple[bool, Dict]:
         try:
@@ -70,9 +70,12 @@ class ImageFilter:
         removed_images = []
 
         for image_dir, mask_dir in [
-            (self.train_image_dir, self.train_mask_dir),
-            (self.val_image_dir, self.val_mask_dir)
+            (self.roads_image_dir, self.roads_mask_dir),
+            (self.buildings_image_dir, self.buildings_mask_dir)
         ]:
+            if not os.path.exists(image_dir):
+                continue
+
             for img_name in os.listdir(image_dir):
                 if not img_name.endswith('.png'):
                     continue
@@ -103,12 +106,13 @@ class ImageFilter:
 
         try:
             kept_images, removed_images = self.filter_images()
-
+            total_images = len(kept_images) + len(removed_images)
+            
             stats = {
-                "total_processed": len(kept_images) + len(removed_images),
+                "total_processed": total_images,
                 "kept_images": len(kept_images),
                 "removed_images": len(removed_images),
-                "kept_ratio": len(kept_images) / (len(kept_images) + len(removed_images))
+                "kept_ratio": len(kept_images) / total_images if total_images > 0 else 0.0
             }
 
             logger.info(f"Filtering completed. Statistics: {stats}")
