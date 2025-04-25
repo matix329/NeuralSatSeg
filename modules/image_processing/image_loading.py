@@ -4,17 +4,24 @@ import rasterio
 import re
 import logging
 from rasterio.enums import Resampling
-from typing import Dict, Generator
+from typing import Dict, Generator, Literal
 import gc
 
 logger = logging.getLogger(__name__)
 
 class ImageLoader:
-    def __init__(self, image_dir: str, target_size=(1300, 1300), batch_size=10):
-        self.image_dir = image_dir
-        self.target_size = target_size
+    def __init__(self, base_dir: str, category: Literal['roads', 'buildings'], batch_size=10):
+        self.base_dir = base_dir
+        self.category = category
         self.batch_size = batch_size
-        logger.info(f"Initializing ImageLoader with directory: {image_dir}")
+        
+        self.target_size = (1300, 1300) if category == 'roads' else (650, 650)
+        
+        self.image_dir = os.path.join(base_dir, "data/train", category)
+        if not os.path.exists(self.image_dir):
+            raise FileNotFoundError(f"Source directory not found: {self.image_dir}")
+            
+        logger.info(f"Initializing ImageLoader for {category} with target size {self.target_size}")
         self.image_dict = self.group_images_by_id()
 
     def find_image_files(self) -> Dict[str, str]:
@@ -29,7 +36,7 @@ class ImageLoader:
     def group_images_by_id(self) -> Dict[str, Dict[str, str]]:
         image_dict = {}
         image_files = self.find_image_files()
-        logger.info(f"Found {len(image_files)} image files")
+        logger.info(f"Found {len(image_files)} image files for {self.category}")
 
         for fname, full_path in image_files.items():
             img_id = self.extract_img_id(fname)
@@ -37,24 +44,37 @@ class ImageLoader:
                 logger.warning(f"Could not extract image ID from filename: {fname}")
                 continue
 
-            if 'PS-RGB' in fname:
-                img_type = 'PS-RGB'
-            elif 'PS-MS' in fname:
-                img_type = 'PS-MS'
-            elif '_MS_' in fname:
-                img_type = 'MS'
-            elif '_PAN_' in fname:
-                img_type = 'PAN'
+            if self.category == 'roads':
+                if 'PS-RGB' in fname:
+                    img_type = 'PS-RGB'
+                elif 'PS-MS' in fname:
+                    img_type = 'PS-MS'
+                elif '_MS_' in fname:
+                    img_type = 'MS'
+                elif '_PAN_' in fname:
+                    img_type = 'PAN'
+                else:
+                    logger.warning(f"Unknown image type in filename: {fname}")
+                    continue
             else:
-                logger.warning(f"Unknown image type in filename: {fname}")
-                continue
+                if 'RGB-PanSharpen' in fname:
+                    img_type = 'PS-RGB'
+                elif 'MUL-PanSharpen' in fname:
+                    img_type = 'PS-MS'
+                elif 'MUL' in fname:
+                    img_type = 'MS'
+                elif 'PAN' in fname:
+                    img_type = 'PAN'
+                else:
+                    logger.warning(f"Unknown image type in filename: {fname}")
+                    continue
 
             if img_id not in image_dict:
                 image_dict[img_id] = {}
             image_dict[img_id][img_type] = full_path
             logger.debug(f"Added {img_type} image for {img_id}: {fname}")
 
-        logger.info(f"Grouped images into {len(image_dict)} sets")
+        logger.info(f"Grouped images into {len(image_dict)} sets for {self.category}")
         return image_dict
 
     def extract_img_id(self, fname: str) -> str:
@@ -103,8 +123,12 @@ class ImageLoader:
                     ps_ms_image = self.load_image(modalities['PS-MS'])
                     ps_rgb_image = self.load_image(modalities['PS-RGB'])
 
-                    ms_rgb = ms_image[:3]
-                    ps_ms_rgb = ps_ms_image[:3]
+                    if self.category == 'roads':
+                        ms_rgb = ms_image[:3]
+                        ps_ms_rgb = ps_ms_image[:3]
+                    else:
+                        ms_rgb = ms_image[:3] if ms_image.shape[0] >= 3 else ms_image
+                        ps_ms_rgb = ps_ms_image[:3] if ps_ms_image.shape[0] >= 3 else ps_ms_image
 
                     pan_rgb = pan_image
                     ps_rgb = ps_rgb_image
@@ -133,14 +157,14 @@ class ImageLoader:
                     missing_modalities += 1
             
             processed_sets += len(batch)
-            logger.info(f"Processed {processed_sets}/{total_sets} image sets")
+            logger.info(f"Processed {processed_sets}/{total_sets} image sets for {self.category}")
             
             yield batch_result
 
             del batch_result
             gc.collect()
 
-        logger.info(f"Completed processing. {missing_modalities} sets skipped due to missing modalities")
+        logger.info(f"Completed processing for {self.category}. {missing_modalities} sets skipped due to missing modalities")
 
     def merge_modalities(self, paths: Dict[str, str]) -> np.ndarray:
         arrays = []
