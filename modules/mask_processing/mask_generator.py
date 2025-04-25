@@ -3,12 +3,17 @@ import rasterio
 import numpy as np
 from rasterio.features import rasterize
 from shapely.geometry import mapping
+import logging
+from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 class MaskGenerator:
-    def __init__(self, geojson_folder, output_size=(1300, 1300), line_width=1):
+    def __init__(self, geojson_folder, category: Literal['roads', 'buildings'], line_width=1):
         self.geojson_folder = geojson_folder
-        self.output_size = output_size
+        self.category = category
         self.line_width = line_width
+        self.output_size = (1300, 1300) if category == 'roads' else (650, 650)
 
     def prepare_mask(self, geojson_path: str, apply_transform: bool = True):
         gdf = gpd.read_file(geojson_path)
@@ -25,7 +30,14 @@ class MaskGenerator:
             self.output_size[1], self.output_size[0]
         )
 
-        shapes = [(mapping(geom), 1) for geom in gdf.geometry if geom.is_valid]
+        if self.category == 'roads':
+            shapes = [(mapping(geom), 1) for geom in gdf.geometry if geom.is_valid]
+        else:
+            shapes = []
+            for _, row in gdf.iterrows():
+                value = row['partialDec'] if row['partialBuilding'] == 1 else 1.0
+                shapes.append((mapping(row.geometry), value))
+
         if not shapes:
             raise ValueError(f"No valid geometries to rasterize in {geojson_path}.")
 
@@ -34,11 +46,14 @@ class MaskGenerator:
             out_shape=self.output_size,
             transform=transform,
             fill=0,
-            dtype=np.uint8,
+            dtype=np.float32 if self.category == 'buildings' else np.uint8,
             all_touched=True
         )
 
-        return np.where(mask > 0, 255, 0), bounds, transform
+        if self.category == 'roads':
+            mask = np.where(mask > 0, 255, 0)
+
+        return mask, bounds, transform
 
     def generate_mask(self, geojson_path, output_path):
         mask, bounds, transform = self.prepare_mask(geojson_path, apply_transform=True)
@@ -49,7 +64,7 @@ class MaskGenerator:
             height=self.output_size[0],
             width=self.output_size[1],
             count=1,
-            dtype=np.uint8,
+            dtype=np.float32 if self.category == 'buildings' else np.uint8,
             crs="EPSG:4326",
             transform=transform
         ) as dst:
