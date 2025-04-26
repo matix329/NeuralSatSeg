@@ -3,10 +3,10 @@ import cv2
 import numpy as np
 import logging
 from typing import List, Tuple, Dict
+import re
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
 
 class ImageFilter:
     def __init__(self, processed_dir: str, black_threshold: float = 0.1, min_content_ratio: float = 0.85):
@@ -81,7 +81,6 @@ class ImageFilter:
                     continue
 
                 img_path = os.path.join(image_dir, img_name)
-                mask_path = os.path.join(mask_dir, img_name)
 
                 keep_image, stats = self.analyze_image(img_path)
 
@@ -94,8 +93,21 @@ class ImageFilter:
 
                     try:
                         os.remove(img_path)
-                        if os.path.exists(mask_path):
-                            os.remove(mask_path)
+                        match = re.search(r'img(\d+)', img_name)
+                        if match:
+                            img_num = match.group(1)
+                            found_mask = None
+                            for mask_file in os.listdir(mask_dir):
+                                if img_num in mask_file and mask_file.endswith('.png'):
+                                    found_mask = mask_file
+                                    break
+                            if found_mask:
+                                mask_path = os.path.join(mask_dir, found_mask)
+                                os.remove(mask_path)
+                            else:
+                                logger.warning(f"No matching mask found for {img_name} (img_num: {img_num}) in {mask_dir}")
+                        else:
+                            logger.warning(f"Could not extract img_num from {img_name} to find mask in {mask_dir}")
                     except Exception as e:
                         logger.error(f"Error removing files for {img_name}: {str(e)}")
 

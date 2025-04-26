@@ -15,9 +15,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class RoadsDataPreparator:
-    def __init__(self, base_dir, image_size=(1300, 1300), test_size=0.2, seed=42, batch_size=1,
+    def __init__(self, base_dir, city_name, image_size=(1300, 1300), test_size=0.2, seed=42, batch_size=1,
                  black_threshold=0.1, min_content_ratio=0.95):
         self.base_dir = base_dir
+        self.city_name = city_name
         self.source_folder = os.path.join(base_dir, "data/train/roads")
         if not os.path.exists(self.source_folder):
             raise FileNotFoundError(f"Source folder not found: {self.source_folder}")
@@ -79,8 +80,8 @@ class RoadsDataPreparator:
                     mask_array = mask_generator.generate_mask_from_array(geojson_path)
                     if np.all(mask_array == 0):
                         continue
-                    out_img_path = os.path.join(self.temp_image_dir, f"img{img_num}.png")
-                    out_mask_path = os.path.join(self.temp_mask_dir, f"img{img_num}.png")
+                    out_img_path = os.path.join(self.temp_image_dir, f"{self.city_name}_road_img{img_num}.png")
+                    out_mask_path = os.path.join(self.temp_mask_dir, f"{self.city_name}_road_mask{img_num}.png")
                     self.save_image(image, out_img_path)
                     self.save_image(mask_array, out_mask_path)
                     total_processed += 1
@@ -141,7 +142,7 @@ class RoadsDataPreparator:
     def filter_processed_data(self):
         logger.info("Starting image filtering")
         image_filter = ImageFilter(
-            processed_dir=os.path.join(self.output_base, "temp/roads"),
+            processed_dir=self.output_base,
             black_threshold=self.black_threshold,
             min_content_ratio=self.min_content_ratio
         )
@@ -154,27 +155,57 @@ class RoadsDataPreparator:
         logger.info("Starting data splitting")
         processed_images = os.listdir(self.temp_image_dir)
         processed_masks = os.listdir(self.temp_mask_dir)
-        image_files = [f for f in processed_images if f.endswith('.png')]
-        mask_files = [f for f in processed_masks if f.endswith('.png')]
-        common_files = set(image_files) & set(mask_files)
-        data = [(f, None, None) for f in common_files]
+        
+        image_numbers = set()
+        mask_numbers = set()
+        
+        for filename in processed_images:
+            if filename.endswith('.png'):
+                match = re.search(r'img(\d+)', filename)
+                if match:
+                    image_numbers.add(match.group(1))
+                    
+        for filename in processed_masks:
+            if filename.endswith('.png'):
+                match = re.search(r'mask(\d+)', filename)
+                if match:
+                    mask_numbers.add(match.group(1))
+                    
+        common_numbers = image_numbers & mask_numbers
+        
+        if not common_numbers:
+            logger.error("No common numbers found between images and masks!")
+            return
+            
+        data = []
+        for number in common_numbers:
+            img_file = f"{self.city_name}_road_img{number}.png"
+            mask_file = f"{self.city_name}_road_mask{number}.png"
+            data.append((img_file, mask_file))
+            
         splitter = Splitter(data, test_size=self.test_size, shuffle=True, seed=self.seed)
         train_data, val_data = splitter.split()
-        logger.info(f"Split data into train: {len(train_data)}, validation: {len(val_data)}")
+        
+        import shutil
         for subset, image_dir, mask_dir in [
             (train_data, self.train_image_dir, self.train_mask_dir),
             (val_data, self.val_image_dir, self.val_mask_dir)
         ]:
-            for index, _, _ in subset:
+            for img_file, mask_file in subset:
                 try:
-                    src_img_path = os.path.join(self.temp_image_dir, index)
-                    src_mask_path = os.path.join(self.temp_mask_dir, index)
-                    dst_img_path = os.path.join(image_dir, index)
-                    dst_mask_path = os.path.join(mask_dir, index)
-                    os.rename(src_img_path, dst_img_path)
-                    os.rename(src_mask_path, dst_mask_path)
+                    src_img_path = os.path.join(self.temp_image_dir, img_file)
+                    src_mask_path = os.path.join(self.temp_mask_dir, mask_file)
+                    
+                    if not os.path.exists(src_img_path) or not os.path.exists(src_mask_path):
+                        continue
+                        
+                    dst_img_path = os.path.join(image_dir, img_file)
+                    dst_mask_path = os.path.join(mask_dir, mask_file)
+                    
+                    shutil.copy2(src_img_path, dst_img_path)
+                    shutil.copy2(src_mask_path, dst_mask_path)
                 except Exception as e:
-                    logger.error(f"Error moving {index}: {str(e)}")
+                    logger.error(f"Error copying {img_file} and {mask_file}: {str(e)}")
         gc.collect()
 
     def run(self, stage="all"):
@@ -205,9 +236,10 @@ class RoadsDataPreparator:
             raise
 
 class BuildingDataPreparator:
-    def __init__(self, base_dir, image_size=(650, 650), test_size=0.2, seed=42, batch_size=1,
+    def __init__(self, base_dir, city_name, image_size=(650, 650), test_size=0.2, seed=42, batch_size=1,
                  black_threshold=0.1, min_content_ratio=0.95):
         self.base_dir = base_dir
+        self.city_name = city_name
         self.source_folder = os.path.join(base_dir, "data/train/buildings")
         if not os.path.exists(self.source_folder):
             raise FileNotFoundError(f"Source folder not found: {self.source_folder}")
@@ -274,8 +306,8 @@ class BuildingDataPreparator:
                     mask_array = mask_generator.generate_mask_from_array(geojson_path)
                     if np.all(mask_array == 0):
                         continue
-                    out_img_path = os.path.join(self.temp_image_dir, f"img{img_num}.png")
-                    out_mask_path = os.path.join(self.temp_mask_dir, f"img{img_num}.png")
+                    out_img_path = os.path.join(self.temp_image_dir, f"{self.city_name}_building_img{img_num}.png")
+                    out_mask_path = os.path.join(self.temp_mask_dir, f"{self.city_name}_building_mask{img_num}.png")
                     self.save_image(image, out_img_path)
                     self.save_image(mask_array, out_mask_path)
                     total_processed += 1
@@ -335,10 +367,8 @@ class BuildingDataPreparator:
 
     def filter_processed_data(self):
         logger.info("Starting image filtering")
-        os.makedirs(self.temp_image_dir, exist_ok=True)
-        os.makedirs(self.temp_mask_dir, exist_ok=True)
         image_filter = ImageFilter(
-            processed_dir=os.path.join(self.output_base, "temp/buildings"),
+            processed_dir=self.output_base,
             black_threshold=self.black_threshold,
             min_content_ratio=self.min_content_ratio
         )
@@ -348,32 +378,60 @@ class BuildingDataPreparator:
         return stats
 
     def split_data(self):
-        logger.info("Starting building data splitting")
-        os.makedirs(self.temp_image_dir, exist_ok=True)
-        os.makedirs(self.temp_mask_dir, exist_ok=True)
+        logger.info("Starting data splitting")
         processed_images = os.listdir(self.temp_image_dir)
         processed_masks = os.listdir(self.temp_mask_dir)
-        image_files = [f for f in processed_images if f.endswith('.png')]
-        mask_files = [f for f in processed_masks if f.endswith('.png')]
-        common_files = set(image_files) & set(mask_files)
-        data = [(f, None, None) for f in common_files]
+        
+        image_numbers = set()
+        mask_numbers = set()
+        
+        for filename in processed_images:
+            if filename.endswith('.png'):
+                match = re.search(r'img(\d+)', filename)
+                if match:
+                    image_numbers.add(match.group(1))
+                    
+        for filename in processed_masks:
+            if filename.endswith('.png'):
+                match = re.search(r'mask(\d+)', filename)
+                if match:
+                    mask_numbers.add(match.group(1))
+                    
+        common_numbers = image_numbers & mask_numbers
+        
+        if not common_numbers:
+            logger.error("No common numbers found between images and masks!")
+            return
+            
+        data = []
+        for number in common_numbers:
+            img_file = f"{self.city_name}_building_img{number}.png"
+            mask_file = f"{self.city_name}_building_mask{number}.png"
+            data.append((img_file, mask_file))
+            
         splitter = Splitter(data, test_size=self.test_size, shuffle=True, seed=self.seed)
         train_data, val_data = splitter.split()
-        logger.info(f"Split building data into train: {len(train_data)}, validation: {len(val_data)}")
+        
+        import shutil
         for subset, image_dir, mask_dir in [
             (train_data, self.train_image_dir, self.train_mask_dir),
             (val_data, self.val_image_dir, self.val_mask_dir)
         ]:
-            for index, _, _ in subset:
+            for img_file, mask_file in subset:
                 try:
-                    src_img_path = os.path.join(self.temp_image_dir, index)
-                    src_mask_path = os.path.join(self.temp_mask_dir, index)
-                    dst_img_path = os.path.join(image_dir, index)
-                    dst_mask_path = os.path.join(mask_dir, index)
-                    os.rename(src_img_path, dst_img_path)
-                    os.rename(src_mask_path, dst_mask_path)
+                    src_img_path = os.path.join(self.temp_image_dir, img_file)
+                    src_mask_path = os.path.join(self.temp_mask_dir, mask_file)
+                    
+                    if not os.path.exists(src_img_path) or not os.path.exists(src_mask_path):
+                        continue
+                        
+                    dst_img_path = os.path.join(image_dir, img_file)
+                    dst_mask_path = os.path.join(mask_dir, mask_file)
+                    
+                    shutil.copy2(src_img_path, dst_img_path)
+                    shutil.copy2(src_mask_path, dst_mask_path)
                 except Exception as e:
-                    logger.error(f"Error moving building {index}: {str(e)}")
+                    logger.error(f"Error copying {img_file} and {mask_file}: {str(e)}")
         gc.collect()
 
     def run(self, stage="all"):
@@ -403,9 +461,37 @@ class BuildingDataPreparator:
             logger.error(f"Error during building data preparation: {str(e)}")
             raise
 
+def detect_city_from_files(base_dir):
+    image_dir = os.path.join(base_dir, "data/train/buildings/RGB-PanSharpen")
+    if not os.path.exists(image_dir):
+        return None
+    
+    for filename in os.listdir(image_dir):
+        if filename.endswith('.tif'):
+            match = re.search(r'AOI_2_(\w+)_', filename)
+            if match:
+                return match.group(1)
+    return None
+
 if __name__ == "__main__":
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    road_preparator = RoadsDataPreparator(base_dir=base_dir, batch_size=2)
-    building_preparator = BuildingDataPreparator(base_dir=base_dir, batch_size=2)
+    
+    city = detect_city_from_files(base_dir)
+    if not city:
+        raise ValueError("Could not detect city from file names")
+    
+    logger.info(f"Detected city: {city}")
+    
+    road_preparator = RoadsDataPreparator(
+        base_dir=base_dir,
+        city_name=city,
+        batch_size=2
+    )
     road_preparator.run(stage="all")
+    
+    building_preparator = BuildingDataPreparator(
+        base_dir=base_dir,
+        city_name=city,
+        batch_size=2
+    )
     building_preparator.run(stage="all")
