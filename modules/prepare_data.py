@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class RoadsDataPreparator:
     def __init__(self, base_dir, city_name, image_size=(1300, 1300), test_size=0.2, seed=42, batch_size=1,
-                 black_threshold=0.1, min_content_ratio=0.95):
+                 black_threshold=0.0, min_content_ratio=1.0):
         self.base_dir = base_dir
         self.city_name = city_name
         self.source_folder = os.path.join(base_dir, "data/train/roads")
@@ -237,13 +237,13 @@ class RoadsDataPreparator:
 
 class BuildingDataPreparator:
     def __init__(self, base_dir, city_name, image_size=(650, 650), test_size=0.2, seed=42, batch_size=1,
-                 black_threshold=0.1, min_content_ratio=0.95):
+                 black_threshold=0.0, min_content_ratio=1.0):
         self.base_dir = base_dir
         self.city_name = city_name
         self.source_folder = os.path.join(base_dir, "data/train/buildings")
         if not os.path.exists(self.source_folder):
             raise FileNotFoundError(f"Source folder not found: {self.source_folder}")
-        self.geojson_folder = os.path.join(self.source_folder, "geojson_buildings/buildings")
+        self.geojson_folder = os.path.join(self.source_folder, "geojson_buildings")
         if not os.path.exists(self.geojson_folder):
             raise FileNotFoundError(f"GeoJSON folder not found: {self.geojson_folder}")
         self.output_base = os.path.join(base_dir, "data/processed")
