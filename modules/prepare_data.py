@@ -77,7 +77,7 @@ class RoadsDataPreparator:
                         continue
                     matching_geojson = geojson_files[img_num]
                     geojson_path = os.path.join(self.geojson_folder, matching_geojson)
-                    mask_array = mask_generator.generate_mask_from_array(geojson_path)
+                    mask_array = mask_generator.generate_mask_from_array(geojson_path, img_id)
                     if np.all(mask_array == 0):
                         continue
                     out_img_path = os.path.join(self.temp_image_dir, f"{self.city_name}_road_img{img_num}.png")
@@ -303,7 +303,7 @@ class BuildingDataPreparator:
                     if os.path.getsize(geojson_path) == 0:
                         logger.warning(f"Empty GeoJSON file: {geojson_path}")
                         continue
-                    mask_array = mask_generator.generate_mask_from_array(geojson_path)
+                    mask_array = mask_generator.generate_mask_from_array(geojson_path, img_id)
                     if np.all(mask_array == 0):
                         continue
                     out_img_path = os.path.join(self.temp_image_dir, f"{self.city_name}_building_img{img_num}.png")
