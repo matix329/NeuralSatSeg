@@ -47,24 +47,12 @@ class ImageLoader:
             if self.category == 'roads':
                 if 'PS-RGB' in fname:
                     img_type = 'PS-RGB'
-                elif 'PS-MS' in fname:
-                    img_type = 'PS-MS'
-                elif '_MS_' in fname:
-                    img_type = 'MS'
-                elif '_PAN_' in fname:
-                    img_type = 'PAN'
                 else:
                     logger.warning(f"Unknown image type in filename: {fname}")
                     continue
             else:
                 if 'RGB-PanSharpen' in fname:
                     img_type = 'PS-RGB'
-                elif 'MUL-PanSharpen' in fname:
-                    img_type = 'PS-MS'
-                elif 'MUL' in fname:
-                    img_type = 'MS'
-                elif 'PAN' in fname:
-                    img_type = 'PAN'
                 else:
                     logger.warning(f"Unknown image type in filename: {fname}")
                     continue
@@ -115,27 +103,11 @@ class ImageLoader:
         batch_result = {}
         for img_id, modalities in batch_items:
             try:
-                if all(key in modalities for key in ['MS', 'PAN', 'PS-MS', 'PS-RGB']):
-                    logger.debug(f"Loading all modalities for {img_id}")
-
-                    ms_image = self.load_image(modalities['MS'])
-                    pan_image = self.load_image(modalities['PAN'])
-                    ps_ms_image = self.load_image(modalities['PS-MS'])
+                if 'PS-RGB' in modalities:
+                    logger.debug(f"Loading PS-RGB image for {img_id}")
                     ps_rgb_image = self.load_image(modalities['PS-RGB'])
-
-                    if self.category == 'roads':
-                        ms_rgb = ms_image[:3]
-                        ps_ms_rgb = ps_ms_image[:3]
-                    else:
-                        ms_rgb = ms_image[:3] if ms_image.shape[0] >= 3 else ms_image
-                        ps_ms_rgb = ps_ms_image[:3] if ps_ms_image.shape[0] >= 3 else ps_ms_image
-
-                    pan_rgb = pan_image
-                    ps_rgb = ps_rgb_image
-
-                    merged = np.concatenate([ms_rgb, pan_rgb, ps_ms_rgb, ps_rgb], axis=0)
-                    batch_result[img_id] = merged
-                    logger.debug(f"Successfully loaded and merged all modalities for {img_id}")
+                    batch_result[img_id] = ps_rgb_image
+                    logger.debug(f"Successfully loaded PS-RGB image for {img_id}")
             except Exception as e:
                 logger.error(f"Error processing {img_id}: {str(e)}")
                 continue
