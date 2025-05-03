@@ -5,6 +5,7 @@ import cv2
 import logging
 import re
 import gc
+from pathlib import Path
 
 from modules.image_processing.image_loading import ImageLoader
 from modules.mask_processing.mask_generator import MaskGenerator
@@ -15,40 +16,47 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class BuildingDataPreparator:
-    def __init__(self, base_dir, city_name, image_size=(650, 650), test_size=0.2, seed=42, batch_size=1,
+    def __init__(self, base_dir, city_name, processed, image_size=(650, 650), test_size=0.2, seed=42, batch_size=1,
                  black_threshold=0.0, min_content_ratio=1.0):
-        self.base_dir = base_dir
+        self.base_dir = Path(base_dir)
         self.city_name = city_name
-        self.source_folder = os.path.join(base_dir, "data/train/buildings")
-        if not os.path.exists(self.source_folder):
+        self.data_dir = self.base_dir / "data" / "train" / city_name
+        self.output_dir = Path(processed) / city_name / "buildings"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.source_folder = self.data_dir / "buildings" / "RGB-PanSharpen"
+        if not self.source_folder.exists():
             raise FileNotFoundError(f"Source folder not found: {self.source_folder}")
-        self.geojson_folder = os.path.join(self.source_folder, "geojson_buildings")
-        if not os.path.exists(self.geojson_folder):
+        self.geojson_folder = self.data_dir / "buildings" / "geojson_buildings"
+        if not self.geojson_folder.exists():
             raise FileNotFoundError(f"GeoJSON folder not found: {self.geojson_folder}")
-        self.output_base = os.path.join(base_dir, "data/processed")
-        os.makedirs(self.output_base, exist_ok=True)
         self.image_size = image_size
         self.test_size = test_size
         self.seed = seed
         self.batch_size = batch_size
         self.black_threshold = black_threshold
         self.min_content_ratio = min_content_ratio
-        self.temp_image_dir = os.path.join(self.output_base, "temp/buildings/images")
-        self.temp_mask_dir = os.path.join(self.output_base, "temp/buildings/masks")
-        self.train_image_dir = os.path.join(self.output_base, "train/buildings/images")
-        self.train_mask_dir = os.path.join(self.output_base, "train/buildings/masks")
-        self.val_image_dir = os.path.join(self.output_base, "val/buildings/images")
-        self.val_mask_dir = os.path.join(self.output_base, "val/buildings/masks")
+        self.temp_image_dir = self.output_dir / "temp/images"
+        self.temp_mask_dir = self.output_dir / "temp/masks"
+        self.train_image_dir = self.output_dir / "train/images"
+        self.train_mask_dir = self.output_dir / "train/masks"
+        self.val_image_dir = self.output_dir / "val/images"
+        self.val_mask_dir = self.output_dir / "val/masks"
         for path in [self.temp_image_dir, self.temp_mask_dir,
                     self.train_image_dir, self.train_mask_dir,
                     self.val_image_dir, self.val_mask_dir]:
-            os.makedirs(path, exist_ok=True)
+            path.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Initialized BuildingDataPreparator for {city_name}")
+        logger.info(f"Data directory: {self.data_dir}")
+        logger.info(f"Output directory: {self.output_dir}")
 
     def process_images_and_masks(self):
         logger.info("Starting building image and mask processing")
-        os.makedirs(self.temp_image_dir, exist_ok=True)
-        os.makedirs(self.temp_mask_dir, exist_ok=True)
-        loader = ImageLoader(self.base_dir, category='buildings', batch_size=self.batch_size)
+        image_files = list(self.source_folder.glob('*.tif'))
+        logger.info(f"Found {len(image_files)} image files in {self.source_folder}")
+        if not image_files:
+            logger.warning("No image files found to process!")
+        loader = ImageLoader(self.source_folder, category='buildings', batch_size=self.batch_size)
         mask_generator = MaskGenerator(
             geojson_folder=self.geojson_folder,
             category='buildings',
@@ -65,30 +73,46 @@ class BuildingDataPreparator:
                 img_num = match.group(1)
                 geojson_files[img_num] = f
         for batch in loader.load_all():
+            if not batch:
+                logger.warning("Batch is empty! No images loaded in this batch.")
             for img_id, image in batch.items():
                 try:
+                    logger.info(f"Processing image: {img_id}")
                     if np.all(image == 0):
+                        logger.warning(f"Image {img_id} is empty (all zeros), skipping.")
                         continue
                     match = re.search(r'img(\d+)', img_id)
                     if not match:
+                        logger.warning(f"Image id {img_id} does not match expected pattern.")
                         total_errors += 1
                         continue
                     img_num = match.group(1)
                     if img_num not in geojson_files:
+                        logger.warning(f"No matching geojson for image {img_id}")
                         total_errors += 1
                         continue
                     matching_geojson = geojson_files[img_num]
-                    geojson_path = os.path.join(self.geojson_folder, matching_geojson)
+                    geojson_path = self.geojson_folder / matching_geojson
+                    logger.info(f"Generating mask for image {img_id} using {matching_geojson}")
                     if os.path.getsize(geojson_path) == 0:
-                        logger.warning(f"Empty GeoJSON file: {geojson_path}")
+                        logger.warning(f"GeoJSON file {geojson_path} is empty, skipping.")
                         continue
                     mask_array = mask_generator.generate_mask_from_array(geojson_path, img_id)
                     if np.all(mask_array == 0):
+                        logger.warning(f"Generated mask for {img_id} is empty (all zeros), skipping.")
                         continue
-                    out_img_path = os.path.join(self.temp_image_dir, f"{self.city_name}_building_img{img_num}.png")
-                    out_mask_path = os.path.join(self.temp_mask_dir, f"{self.city_name}_building_mask{img_num}.png")
-                    self.save_image(image, out_img_path)
-                    self.save_image(mask_array, out_mask_path)
+                    out_img_path = self.temp_image_dir / f"{self.city_name}_building_img{img_num}.png"
+                    out_mask_path = self.temp_mask_dir / f"{self.city_name}_building_mask{img_num}.png"
+                    try:
+                        self.save_image(image, out_img_path)
+                        logger.info(f"Saved image to {out_img_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to save image {out_img_path}: {str(e)}")
+                    try:
+                        self.save_image(mask_array, out_mask_path)
+                        logger.info(f"Saved mask to {out_mask_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to save mask {out_mask_path}: {str(e)}")
                     total_processed += 1
                     if total_processed % 10 == 0:
                         logger.info(f"Processed {total_processed} building images so far")
@@ -101,13 +125,14 @@ class BuildingDataPreparator:
             gc.collect()
         logger.info(f"Building processing completed. Successfully processed: {total_processed}, Errors: {total_errors}")
 
-    def save_image(self, image: np.ndarray, path: str):
+    def save_image(self, image: np.ndarray, path: Path):
         try:
+            logger.info(f"Saving image. Path type: {type(path)}, value: {path}")
             image = image.copy()
             if np.all(image == 0):
                 logger.debug(f"Skipping empty image: {path}")
                 return
-            if "masks" in path:
+            if "masks" in str(path):
                 if np.max(image) == 1:
                     image = (image * 255).astype(np.uint8)
                 elif np.max(image) == 255:
@@ -125,7 +150,7 @@ class BuildingDataPreparator:
                 elif image.dtype != np.uint8:
                     image = image.astype(np.uint8)
             if len(image.shape) == 3 and image.shape[0] > 3:
-                if "masks" in path:
+                if "masks" in str(path):
                     image = image[0]
                 else:
                     image = image[-3:]
@@ -136,8 +161,9 @@ class BuildingDataPreparator:
             if np.all(image == 0):
                 logger.debug(f"Skipping zero image after processing: {path}")
                 return
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            cv2.imwrite(path, image)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Calling cv2.imwrite with path: {str(path)}")
+            cv2.imwrite(str(path), image)
             logger.debug(f"Successfully saved image to: {path}")
             gc.collect()
         except Exception as e:
@@ -147,7 +173,7 @@ class BuildingDataPreparator:
     def filter_processed_data(self):
         logger.info("Starting image filtering")
         image_filter = ImageFilter(
-            processed_dir=self.output_base,
+            processed_dir=self.output_dir,
             black_threshold=self.black_threshold,
             min_content_ratio=self.min_content_ratio
         )
@@ -198,14 +224,14 @@ class BuildingDataPreparator:
         ]:
             for img_file, mask_file in subset:
                 try:
-                    src_img_path = os.path.join(self.temp_image_dir, img_file)
-                    src_mask_path = os.path.join(self.temp_mask_dir, mask_file)
+                    src_img_path = self.temp_image_dir / img_file
+                    src_mask_path = self.temp_mask_dir / mask_file
                     
-                    if not os.path.exists(src_img_path) or not os.path.exists(src_mask_path):
+                    if not src_img_path.exists() or not src_mask_path.exists():
                         continue
                         
-                    dst_img_path = os.path.join(image_dir, img_file)
-                    dst_mask_path = os.path.join(mask_dir, mask_file)
+                    dst_img_path = image_dir / img_file
+                    dst_mask_path = mask_dir / mask_file
                     
                     shutil.copy2(src_img_path, dst_img_path)
                     shutil.copy2(src_mask_path, dst_mask_path)
@@ -220,8 +246,8 @@ class BuildingDataPreparator:
                 self.process_images_and_masks()
                 self.filter_processed_data()
                 self.split_data()
-                temp_dir = os.path.join(self.output_base, "temp")
-                if os.path.exists(temp_dir):
+                temp_dir = self.output_dir / "temp"
+                if temp_dir.exists():
                     import shutil
                     shutil.rmtree(temp_dir)
                     logger.info(f"Removed temporary directory: {temp_dir}")

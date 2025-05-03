@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 def main():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(base_dir, "data")
+    processed_dir = os.path.join(data_dir, "processed")
+    os.makedirs(processed_dir, exist_ok=True)
     cities = ["Vegas", "Paris", "Shanghai"]
     data_types = ["roads", "buildings"]
     
@@ -25,9 +28,9 @@ def main():
             try:
                 logger.info(f"Starting {data_type} processing for {city}")
                 if data_type == "roads":
-                    preparator = RoadsDataPreparator(base_dir, city)
+                    preparator = RoadsDataPreparator(base_dir, city, processed=processed_dir)
                 else:
-                    preparator = BuildingDataPreparator(base_dir, city)
+                    preparator = BuildingDataPreparator(base_dir, city, processed=processed_dir)
                 logger.info(f"Initialized {data_type} preparator for {city}")
                 preparator.run()
                 logger.info(f"Successfully processed {data_type} for {city}")
@@ -35,6 +38,7 @@ def main():
                 logger.error(f"Error processing {data_type} for {city}: {str(e)}")
                 logger.error(f"Error type: {type(e).__name__}")
                 logger.error(f"Error details: {str(e)}")
+        file_handler.flush()
         logger.removeHandler(file_handler)
         file_handler.close()
 
