@@ -21,7 +21,7 @@ class BuildingDataPreparator:
         self.base_dir = Path(base_dir)
         self.city_name = city_name
         self.data_dir = self.base_dir / "data" / "train" / city_name
-        self.output_dir = Path(processed) / city_name / "buildings"
+        self.output_dir = Path(processed)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.source_folder = self.data_dir / "buildings" / "RGB-PanSharpen"
         if not self.source_folder.exists():
@@ -35,12 +35,12 @@ class BuildingDataPreparator:
         self.batch_size = batch_size
         self.black_threshold = black_threshold
         self.min_content_ratio = min_content_ratio
-        self.temp_image_dir = self.output_dir / "temp/images"
-        self.temp_mask_dir = self.output_dir / "temp/masks"
-        self.train_image_dir = self.output_dir / "train/images"
-        self.train_mask_dir = self.output_dir / "train/masks"
-        self.val_image_dir = self.output_dir / "val/images"
-        self.val_mask_dir = self.output_dir / "val/masks"
+        self.temp_image_dir = self.output_dir / "temp/buildings/images"
+        self.temp_mask_dir = self.output_dir / "temp/buildings/masks"
+        self.train_image_dir = self.output_dir / "train/buildings/images"
+        self.train_mask_dir = self.output_dir / "train/buildings/masks"
+        self.val_image_dir = self.output_dir / "val/buildings/images"
+        self.val_mask_dir = self.output_dir / "val/buildings/masks"
         for path in [self.temp_image_dir, self.temp_mask_dir,
                     self.train_image_dir, self.train_mask_dir,
                     self.val_image_dir, self.val_mask_dir]:
@@ -186,53 +186,42 @@ class BuildingDataPreparator:
         logger.info("Starting data splitting")
         processed_images = os.listdir(self.temp_image_dir)
         processed_masks = os.listdir(self.temp_mask_dir)
-        
         image_numbers = set()
         mask_numbers = set()
-        
         for filename in processed_images:
             if filename.endswith('.png'):
                 match = re.search(r'img(\d+)', filename)
                 if match:
                     image_numbers.add(match.group(1))
-                    
         for filename in processed_masks:
             if filename.endswith('.png'):
                 match = re.search(r'mask(\d+)', filename)
                 if match:
                     mask_numbers.add(match.group(1))
-                    
         common_numbers = image_numbers & mask_numbers
-        
         if not common_numbers:
             logger.error("No common numbers found between images and masks!")
             return
-            
         data = []
         for number in common_numbers:
             img_file = f"{self.city_name}_building_img{number}.png"
             mask_file = f"{self.city_name}_building_mask{number}.png"
             data.append((img_file, mask_file))
-            
         splitter = Splitter(data, test_size=self.test_size, shuffle=True, seed=self.seed)
         train_data, val_data = splitter.split()
-        
         import shutil
         for subset, image_dir, mask_dir in [
-            (train_data, self.train_image_dir, self.train_mask_dir),
-            (val_data, self.val_image_dir, self.val_mask_dir)
+            (train_data, self.output_dir / "train/buildings/images", self.output_dir / "train/buildings/masks"),
+            (val_data, self.output_dir / "val/buildings/images", self.output_dir / "val/buildings/masks")
         ]:
             for img_file, mask_file in subset:
                 try:
                     src_img_path = self.temp_image_dir / img_file
                     src_mask_path = self.temp_mask_dir / mask_file
-                    
                     if not src_img_path.exists() or not src_mask_path.exists():
                         continue
-                        
                     dst_img_path = image_dir / img_file
                     dst_mask_path = mask_dir / mask_file
-                    
                     shutil.copy2(src_img_path, dst_img_path)
                     shutil.copy2(src_mask_path, dst_mask_path)
                 except Exception as e:
