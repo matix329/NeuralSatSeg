@@ -17,7 +17,7 @@ class ImageLoader:
         
         self.target_size = (1300, 1300) if category == 'roads' else (650, 650)
         
-        self.image_dir = os.path.join(base_dir, "data/train", category)
+        self.image_dir = base_dir
         if not os.path.exists(self.image_dir):
             raise FileNotFoundError(f"Source directory not found: {self.image_dir}")
             
