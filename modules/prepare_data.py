@@ -18,11 +18,6 @@ def main():
     logger.info(f"Starting data preparation from base directory: {base_dir}")
     
     for city in cities:
-        log_path = os.path.join(base_dir, f"logs_{city}.txt")
-        file_handler = logging.FileHandler(log_path, mode='w')
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logger.addHandler(file_handler)
-        
         logger.info(f"\nProcessing city: {city}")
         for data_type in data_types:
             try:
@@ -38,9 +33,6 @@ def main():
                 logger.error(f"Error processing {data_type} for {city}: {str(e)}")
                 logger.error(f"Error type: {type(e).__name__}")
                 logger.error(f"Error details: {str(e)}")
-        file_handler.flush()
-        logger.removeHandler(file_handler)
-        file_handler.close()
 
 if __name__ == "__main__":
     main()
