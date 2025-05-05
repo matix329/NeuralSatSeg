@@ -47,15 +47,13 @@ class RoadsDataPreparator:
             path.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"Initialized RoadsDataPreparator for {city_name}")
-        logger.info(f"Data directory: {self.data_dir}")
-        logger.info(f"Output directory: {self.output_dir}")
 
     def process_images_and_masks(self):
         logger.info("Starting image and mask processing")
         image_files = list(self.source_folder.glob('*.tif'))
-        logger.info(f"Found {len(image_files)} image files in {self.source_folder}")
         if not image_files:
             logger.warning("No image files found to process!")
+            return
         loader = ImageLoader(self.source_folder, category='roads', batch_size=self.batch_size)
         mask_generator = MaskGenerator(
             geojson_folder=self.geojson_folder,
@@ -74,46 +72,34 @@ class RoadsDataPreparator:
                 geojson_files[img_num] = f
         for batch in loader.load_all():
             if not batch:
-                logger.warning("Batch is empty! No images loaded in this batch.")
+                continue
             for img_id, image in batch.items():
                 try:
-                    logger.info(f"Processing image: {img_id}")
                     if np.all(image == 0):
-                        logger.warning(f"Image {img_id} is empty (all zeros), skipping.")
                         continue
                     match = re.search(r'img(\d+)', img_id)
                     if not match:
-                        logger.warning(f"Image id {img_id} does not match expected pattern.")
                         total_errors += 1
                         continue
                     img_num = match.group(1)
                     if img_num not in geojson_files:
-                        logger.warning(f"No matching geojson for image {img_id}")
                         total_errors += 1
                         continue
                     matching_geojson = geojson_files[img_num]
                     geojson_path = self.geojson_folder / matching_geojson
-                    logger.info(f"Generating mask for image {img_id} using {matching_geojson}")
                     mask_array = mask_generator.generate_mask_from_array(geojson_path, img_id)
                     if np.all(mask_array == 0):
-                        logger.warning(f"Generated mask for {img_id} is empty (all zeros), skipping.")
                         continue
                     out_img_path = self.temp_image_dir / f"{self.city_name}_road_img{img_num}.png"
                     out_mask_path = self.temp_mask_dir / f"{self.city_name}_road_mask{img_num}.png"
                     try:
                         self.save_image(image, out_img_path)
-                        logger.info(f"Saved image to {out_img_path}")
-                    except Exception as e:
-                        logger.error(f"Failed to save image {out_img_path}: {str(e)}")
-                    try:
                         self.save_image(mask_array, out_mask_path)
-                        logger.info(f"Saved mask to {out_mask_path}")
                     except Exception as e:
-                        logger.error(f"Failed to save mask {out_mask_path}: {str(e)}")
+                        logger.error(f"Failed to save image/mask for {img_id}: {str(e)}")
                     total_processed += 1
                     if total_processed % 10 == 0:
-                        logger.info(f"Processed {total_processed} images so far")
-                        gc.collect()
+                        logger.info(f"Processed {total_processed} images")
                 except Exception as e:
                     logger.error(f"Error processing {img_id}: {str(e)}")
                     total_errors += 1
@@ -124,10 +110,8 @@ class RoadsDataPreparator:
 
     def save_image(self, image: np.ndarray, path: Path):
         try:
-            logger.info(f"Saving image. Path type: {type(path)}, value: {path}")
             image = image.copy()
             if np.all(image == 0):
-                logger.debug(f"Skipping empty image: {path}")
                 return
             if "masks" in str(path):
                 if np.max(image) == 1:
@@ -156,12 +140,9 @@ class RoadsDataPreparator:
             if len(image.shape) == 2:
                 image = np.expand_dims(image, axis=-1)
             if np.all(image == 0):
-                logger.debug(f"Skipping zero image after processing: {path}")
                 return
             path.parent.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Calling cv2.imwrite with path: {str(path)}")
             cv2.imwrite(str(path), image)
-            logger.debug(f"Successfully saved image to: {path}")
             gc.collect()
         except Exception as e:
             logger.error(f"Error saving image to {path}: {str(e)}")
@@ -245,9 +226,8 @@ class RoadsDataPreparator:
                 self.split_data()
             else:
                 logger.error(f"Unknown stage: {stage}")
-                return
             end_time = time.time()
             logger.info(f"Data preparation completed in {end_time - start_time:.2f} seconds")
         except Exception as e:
-            logger.error(f"Error during data preparation: {str(e)}")
+            logger.error(f"Error in data preparation: {str(e)}")
             raise 
