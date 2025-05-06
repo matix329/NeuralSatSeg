@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class BuildingDataPreparator:
     def __init__(self, base_dir, city_name, processed, image_size=(650, 650), test_size=0.2, seed=42, batch_size=1,
-                 black_threshold=0.0, min_content_ratio=1.0):
+                 black_threshold=0.0, min_content_ratio=1.0, brightness_factor=1.5, saturation_factor=1.3):
         self.base_dir = Path(base_dir)
         self.city_name = city_name
         self.data_dir = self.base_dir / "data" / "train" / city_name
@@ -41,6 +41,8 @@ class BuildingDataPreparator:
         self.train_mask_dir = self.output_dir / "train/buildings/masks"
         self.val_image_dir = self.output_dir / "val/buildings/images"
         self.val_mask_dir = self.output_dir / "val/buildings/masks"
+        self.brightness_factor = brightness_factor
+        self.saturation_factor = saturation_factor
         for path in [self.temp_image_dir, self.temp_mask_dir,
                     self.train_image_dir, self.train_mask_dir,
                     self.val_image_dir, self.val_mask_dir]:
@@ -132,6 +134,13 @@ class BuildingDataPreparator:
                     image = (image / 8).astype(np.uint8)
                 elif image.dtype != np.uint8:
                     image = image.astype(np.uint8)
+                image = np.clip(image * self.brightness_factor, 0, 255).astype(np.uint8)
+                if image.shape[-1] == 3 or (len(image.shape) == 3 and image.shape[2] == 3):
+                    img_hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+                    img_hsv = img_hsv.astype(np.float32)
+                    img_hsv[..., 1] = np.clip(img_hsv[..., 1] * self.saturation_factor, 0, 255)
+                    img_hsv = img_hsv.astype(np.uint8)
+                    image = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2RGB)
             if len(image.shape) == 3 and image.shape[0] > 3:
                 if "masks" in str(path):
                     image = image[0]
