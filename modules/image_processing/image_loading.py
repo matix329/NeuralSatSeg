@@ -3,9 +3,10 @@ import numpy as np
 import rasterio
 import re
 import logging
+import gc
+import cv2
 from rasterio.enums import Resampling
 from typing import Dict, Generator, Literal
-import gc
 
 logger = logging.getLogger(__name__)
 
@@ -14,15 +15,39 @@ class ImageLoader:
         self.base_dir = base_dir
         self.category = category
         self.batch_size = batch_size
-        
         self.target_size = (1300, 1300) if category == 'roads' else (650, 650)
-        
         self.image_dir = base_dir
         if not os.path.exists(self.image_dir):
             raise FileNotFoundError(f"Source directory not found: {self.image_dir}")
-            
         logger.info(f"Initializing ImageLoader for {category} with target size {self.target_size}")
         self.image_dict = self.group_images_by_id()
+
+    @staticmethod
+    def load_image_or_mask(path: str, shift_mask: bool = False) -> np.ndarray:
+        ext = os.path.splitext(path)[1].lower()
+        if ext in ['.png', '.tif', '.tiff']:
+            if ext == '.png':
+                arr = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+                if arr is None:
+                    raise FileNotFoundError(f"Unable to load file: {path}")
+                if len(arr.shape) == 3 and arr.shape[2] == 4:
+                    arr = arr[..., :3]
+                arr = arr.astype(np.uint8)
+            else:
+                with rasterio.open(path) as src:
+                    arr = src.read()
+                    if arr.shape[0] == 1:
+                        arr = arr[0]
+                    arr = np.moveaxis(arr, 0, -1) if arr.ndim == 3 else arr
+                    arr = arr.astype(np.uint8)
+        else:
+            raise ValueError(f"Unsupported file extension: {ext}")
+        if shift_mask:
+            shift_x = np.random.randint(-2, 3)
+            shift_y = np.random.randint(-2, 3)
+            arr = np.roll(arr, shift_x, axis=1)
+            arr = np.roll(arr, shift_y, axis=0)
+        return arr
 
     def find_image_files(self) -> Dict[str, str]:
         image_files = {}
