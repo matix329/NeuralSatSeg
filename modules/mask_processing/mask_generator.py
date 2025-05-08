@@ -113,23 +113,6 @@ class BuildingMaskGenerator(BaseMaskGenerator):
         super().__init__(geojson_folder)
         self.output_size = (650, 650)
 
-    @staticmethod
-    def morph_erode_masks(mask: np.ndarray, kernel_size: int) -> np.ndarray:
-        kernel = np.ones((kernel_size, kernel_size), np.uint8)
-        eroded = cv2.erode(mask.astype(np.uint8), kernel, iterations=1)
-        return eroded
-
-    @staticmethod
-    def generate_border_ignore(mask: np.ndarray, border_width: int) -> np.ndarray:
-        binary = (mask > 0).astype(np.uint8)
-        kernel = np.ones((border_width, border_width), np.uint8)
-        eroded = cv2.erode(binary, kernel, iterations=1)
-        border = binary & (~eroded)
-        ignore_mask = mask.copy()
-        ignore_mask = ignore_mask.astype(np.float32)
-        ignore_mask[border == 1] = -1.0
-        return ignore_mask
-
     def prepare_mask(self, geojson_path: str, img_id: str) -> np.ndarray:
         gdf = gpd.read_file(geojson_path)
         if gdf.empty:
@@ -154,9 +137,4 @@ class BuildingMaskGenerator(BaseMaskGenerator):
             dtype=np.float32,
             all_touched=True
         )
-
-        mask_eroded = self.morph_erode_masks(mask, kernel_size=3)
-        border_ignore = self.generate_border_ignore(mask_eroded, border_width=3)
-        mask_eroded[border_ignore == 1] = 255
-        
-        return mask_eroded
+        return mask
