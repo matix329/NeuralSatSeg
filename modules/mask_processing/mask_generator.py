@@ -4,7 +4,6 @@ import numpy as np
 import logging
 import os
 import warnings
-import cv2
 from rasterio.features import rasterize
 from shapely.geometry import mapping
 from typing import Tuple
