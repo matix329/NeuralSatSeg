@@ -8,7 +8,7 @@ import gc
 from pathlib import Path
 
 from modules.image_processing.image_loading import ImageLoader
-from modules.mask_processing.mask_generator import MaskGenerator
+from modules.mask_processing.mask_generator import RoadMaskGenerator
 from modules.splitter.splitter import Splitter
 from modules.image_filtering.image_filtering import ImageFilter
 
@@ -57,11 +57,7 @@ class RoadsDataPreparator:
             logger.warning("No image files found to process!")
             return
         loader = ImageLoader(self.source_folder, category='roads', batch_size=self.batch_size)
-        mask_generator = MaskGenerator(
-            geojson_folder=self.geojson_folder,
-            category='roads',
-            line_width=1
-        )
+        mask_generator = RoadMaskGenerator(geojson_folder=self.geojson_folder, line_width=1)
         total_processed = 0
         total_errors = 0
         geojson_files = {}

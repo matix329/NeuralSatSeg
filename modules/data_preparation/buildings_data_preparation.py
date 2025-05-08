@@ -8,7 +8,7 @@ import gc
 from pathlib import Path
 
 from modules.image_processing.image_loading import ImageLoader
-from modules.mask_processing.mask_generator import MaskGenerator
+from modules.mask_processing.mask_generator import BuildingMaskGenerator
 from modules.splitter.splitter import Splitter
 from modules.image_filtering.image_filtering import ImageFilter
 
@@ -57,11 +57,7 @@ class BuildingDataPreparator:
             logger.warning("No image files found to process!")
             return
         loader = ImageLoader(self.source_folder, category='buildings', batch_size=self.batch_size)
-        mask_generator = MaskGenerator(
-            geojson_folder=self.geojson_folder,
-            category='buildings',
-            line_width=1
-        )
+        mask_generator = BuildingMaskGenerator(geojson_folder=self.geojson_folder)
         total_processed = 0
         total_errors = 0
         geojson_files = {}
