@@ -9,3 +9,5 @@ mlflow
 matplotlib
 colorlog
 opencv-python
+torch
+torch_geometric
