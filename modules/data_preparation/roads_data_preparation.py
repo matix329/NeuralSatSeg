@@ -254,7 +254,6 @@ class RoadsDataPreparator:
                 self.split_data()
                 temp_dir = self.output_dir / "temp"
                 if temp_dir.exists():
-                    import shutil
                     shutil.rmtree(temp_dir)
                     logger.info(f"Removed temporary directory: {temp_dir}")
             elif stage == "process":

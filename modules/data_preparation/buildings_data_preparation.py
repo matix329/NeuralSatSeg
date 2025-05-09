@@ -5,6 +5,7 @@ import cv2
 import logging
 import re
 import gc
+import shutil
 from pathlib import Path
 
 from modules.image_processing.image_loading import ImageLoader
@@ -194,7 +195,6 @@ class BuildingDataPreparator:
             data.append((img_file, mask_file))
         splitter = Splitter(data, test_size=self.test_size, shuffle=True, seed=self.seed)
         train_data, val_data = splitter.split()
-        import shutil
         for subset, image_dir, mask_dir in [
             (train_data, self.output_dir / "train/buildings/images", self.output_dir / "train/buildings/masks"),
             (val_data, self.output_dir / "val/buildings/images", self.output_dir / "val/buildings/masks")
@@ -222,7 +222,6 @@ class BuildingDataPreparator:
                 self.split_data()
                 temp_dir = self.output_dir / "temp"
                 if temp_dir.exists():
-                    import shutil
                     shutil.rmtree(temp_dir)
                     logger.info(f"Removed temporary directory: {temp_dir}")
             elif stage == "process":
