@@ -4,6 +4,9 @@ import numpy as np
 import logging
 import os
 import warnings
+import networkx as nx
+import torch
+from torch_geometric.data import Data
 from rasterio.features import rasterize
 from shapely.geometry import mapping
 from typing import Tuple
@@ -137,3 +140,74 @@ class BuildingMaskGenerator(BaseMaskGenerator):
             all_touched=True
         )
         return mask
+
+class RoadGraphMaskGenerator(BaseMaskGenerator):
+    def __init__(self, geojson_folder):
+        super().__init__(geojson_folder)
+        self.output_size = (1300, 1300)
+
+    def prepare_mask(self, geojson_path: str, img_id: str) -> dict:
+        gdf = gpd.read_file(geojson_path)
+        if gdf.empty:
+            raise ValueError(f"GeoJSON file {geojson_path} is empty or invalid.")
+            
+        transform, crs, size = self.get_tiff_parameters(img_id)
+        gdf = gdf.to_crs(crs)
+        
+        road_graph = nx.Graph()
+        
+        node_id = 0
+        node_mapping = {}
+        
+        for idx, row in gdf.iterrows():
+            line = row.geometry
+            if not line.is_valid:
+                continue
+                
+            coords = np.array(line.coords)
+            pixel_coords = []
+            for x, y in coords:
+                row_img, col_img = ~transform * (x, y)
+                pixel_coords.append((int(col_img), int(row_img)))
+            
+            for i in range(len(pixel_coords) - 1):
+                p1, p2 = pixel_coords[i], pixel_coords[i + 1]
+                
+                for p in [p1, p2]:
+                    if p not in node_mapping:
+                        node_mapping[p] = node_id
+                        road_graph.add_node(node_id, pos=p)
+                        node_id += 1
+                
+                width = 1.0
+                typ = 'unknown'
+                if hasattr(row, 'get'):
+                    width = row.get('width', 1.0)
+                    typ = row.get('type', 'unknown')
+                elif isinstance(row, dict):
+                    width = row.get('width', 1.0)
+                    typ = row.get('type', 'unknown')
+                else:
+                    logger.warning(f"Unexpected record type in geojson: {type(row)} for img_id={img_id}, idx={idx}")
+                
+                road_graph.add_edge(node_mapping[p1], node_mapping[p2], width=width, type=typ)
+        
+        node_features = torch.tensor([road_graph.nodes[n]['pos'] for n in road_graph.nodes], dtype=torch.float32)
+        edge_index = torch.tensor(list(road_graph.edges)).t().contiguous()
+        edge_attr = torch.tensor([[road_graph[u][v]['width']] for u, v in road_graph.edges])
+        
+        return {
+            'node_features': node_features,
+            'edge_index': edge_index,
+            'edge_attr': edge_attr
+        }
+
+    def generate_mask(self, geojson_path: str, img_id: str, output_path: str) -> str:
+        graph_data = self.prepare_mask(geojson_path, img_id)
+        data = Data(
+            x=graph_data['node_features'],
+            edge_index=graph_data['edge_index'],
+            edge_attr=graph_data['edge_attr']
+        )
+        torch.save(data, output_path)
+        return output_path

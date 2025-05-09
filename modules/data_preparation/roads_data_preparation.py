@@ -5,10 +5,11 @@ import cv2
 import logging
 import re
 import gc
+import shutil
 from pathlib import Path
 
 from modules.image_processing.image_loading import ImageLoader
-from modules.mask_processing.mask_generator import RoadMaskGenerator
+from modules.mask_processing.mask_generator import RoadMaskGenerator, RoadGraphMaskGenerator
 from modules.splitter.splitter import Splitter
 from modules.image_filtering.image_filtering import ImageFilter
 
@@ -36,16 +37,20 @@ class RoadsDataPreparator:
         self.black_threshold = black_threshold
         self.min_content_ratio = min_content_ratio
         self.temp_image_dir = self.output_dir / "temp/roads/images"
-        self.temp_mask_dir = self.output_dir / "temp/roads/masks"
+        self.temp_mask_binary_dir = self.output_dir / "temp/roads/masks-binary"
+        self.temp_mask_graph_dir = self.output_dir / "temp/roads/masks-graph"
         self.train_image_dir = self.output_dir / "train/roads/images"
-        self.train_mask_dir = self.output_dir / "train/roads/masks"
+        self.train_mask_binary_dir = self.output_dir / "train/roads/masks-binary"
+        self.train_mask_graph_dir = self.output_dir / "train/roads/masks-graph"
         self.val_image_dir = self.output_dir / "val/roads/images"
-        self.val_mask_dir = self.output_dir / "val/roads/masks"
+        self.val_mask_binary_dir = self.output_dir / "val/roads/masks-binary"
+        self.val_mask_graph_dir = self.output_dir / "val/roads/masks-graph"
         self.brightness_factor = brightness_factor
         self.saturation_factor = saturation_factor
-        for path in [self.temp_image_dir, self.temp_mask_dir,
-                    self.train_image_dir, self.train_mask_dir,
-                    self.val_image_dir, self.val_mask_dir]:
+        
+        for path in [self.temp_image_dir, self.temp_mask_binary_dir, self.temp_mask_graph_dir,
+                    self.train_image_dir, self.train_mask_binary_dir, self.train_mask_graph_dir,
+                    self.val_image_dir, self.val_mask_binary_dir, self.val_mask_graph_dir]:
             path.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"Initialized RoadsDataPreparator for {city_name}")
@@ -56,11 +61,15 @@ class RoadsDataPreparator:
         if not image_files:
             logger.warning("No image files found to process!")
             return
+            
         loader = ImageLoader(self.source_folder, category='roads', batch_size=self.batch_size)
-        mask_generator = RoadMaskGenerator(geojson_folder=self.geojson_folder, line_width=1)
+        binary_mask_generator = RoadMaskGenerator(geojson_folder=self.geojson_folder, line_width=1)
+        graph_mask_generator = RoadGraphMaskGenerator(geojson_folder=self.geojson_folder)
+        
         total_processed = 0
         total_errors = 0
         geojson_files = {}
+        
         for f in os.listdir(self.geojson_folder):
             if not f.endswith(".geojson"):
                 continue
@@ -68,6 +77,7 @@ class RoadsDataPreparator:
             if match:
                 img_num = match.group(1)
                 geojson_files[img_num] = f
+                
         for batch in loader.load_all():
             if not batch:
                 continue
@@ -83,18 +93,27 @@ class RoadsDataPreparator:
                     if img_num not in geojson_files:
                         total_errors += 1
                         continue
+                        
                     matching_geojson = geojson_files[img_num]
                     geojson_path = self.geojson_folder / matching_geojson
-                    mask_array = mask_generator.generate_mask_from_array(geojson_path, img_id)
-                    if np.all(mask_array == 0):
+                    
+                    binary_mask = binary_mask_generator.generate_mask_from_array(geojson_path, img_id)
+                    if np.all(binary_mask == 0):
                         continue
+                        
+                    graph_data = graph_mask_generator.prepare_mask(geojson_path, img_id)
+                    
                     out_img_path = self.temp_image_dir / f"{self.city_name}_road_img{img_num}.png"
-                    out_mask_path = self.temp_mask_dir / f"{self.city_name}_road_mask{img_num}.png"
+                    out_binary_mask_path = self.temp_mask_binary_dir / f"{self.city_name}_road_mask{img_num}.png"
+                    out_graph_mask_path = self.temp_mask_graph_dir / f"{self.city_name}_road_mask{img_num}.pt"
+                    
                     try:
                         self.save_image(image, out_img_path)
-                        self.save_image(mask_array, out_mask_path)
+                        self.save_image(binary_mask, out_binary_mask_path)
+                        graph_mask_generator.generate_mask(geojson_path, img_id, out_graph_mask_path)
                     except Exception as e:
                         logger.error(f"Failed to save image/mask for {img_id}: {str(e)}")
+                        
                     total_processed += 1
                     if total_processed % 10 == 0:
                         logger.info(f"Processed {total_processed} images")
@@ -110,7 +129,8 @@ class RoadsDataPreparator:
         try:
             image = image.copy()
             if np.all(image == 0):
-                return
+                logger.warning(f"Image to save is empty (all zeros): {path}")
+                return False
             if "masks" in str(path):
                 if np.max(image) == 1:
                     image = (image * 255).astype(np.uint8)
@@ -145,10 +165,16 @@ class RoadsDataPreparator:
             if len(image.shape) == 2:
                 image = np.expand_dims(image, axis=-1)
             if np.all(image == 0):
-                return
+                logger.warning(f"Image to save is empty after processing: {path}")
+                return False
             path.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(path), image)
+            result = cv2.imwrite(str(path), image)
+            if not result:
+                logger.error(f"cv2.imwrite returned False, image not saved: {path}")
+                return False
+            logger.info(f"Image saved successfully: {path}")
             gc.collect()
+            return True
         except Exception as e:
             logger.error(f"Error saving image to {path}: {str(e)}")
             raise
@@ -168,48 +194,56 @@ class RoadsDataPreparator:
     def split_data(self):
         logger.info("Starting data splitting")
         processed_images = os.listdir(self.temp_image_dir)
-        processed_masks = os.listdir(self.temp_mask_dir)
+        processed_binary_masks = os.listdir(self.temp_mask_binary_dir)
+        processed_graph_masks = os.listdir(self.temp_mask_graph_dir)
+        
         image_numbers = set()
-        mask_numbers = set()
+        binary_mask_numbers = set()
+        graph_mask_numbers = set()
+        
         for filename in processed_images:
             if filename.endswith('.png'):
                 match = re.search(r'img(\d+)', filename)
                 if match:
                     image_numbers.add(match.group(1))
-        for filename in processed_masks:
+                    
+        for filename in processed_binary_masks:
             if filename.endswith('.png'):
                 match = re.search(r'mask(\d+)', filename)
                 if match:
-                    mask_numbers.add(match.group(1))
-        common_numbers = image_numbers & mask_numbers
+                    binary_mask_numbers.add(match.group(1))
+                    
+        for filename in processed_graph_masks:
+            if filename.endswith('.pt'):
+                match = re.search(r'mask(\d+)', filename)
+                if match:
+                    graph_mask_numbers.add(match.group(1))
+                    
+        common_numbers = image_numbers & binary_mask_numbers & graph_mask_numbers
         if not common_numbers:
             logger.error("No common numbers found between images and masks!")
             return
+            
         data = []
         for number in common_numbers:
             img_file = f"{self.city_name}_road_img{number}.png"
-            mask_file = f"{self.city_name}_road_mask{number}.png"
-            data.append((img_file, mask_file))
+            binary_mask_file = f"{self.city_name}_road_mask{number}.png"
+            graph_mask_file = f"{self.city_name}_road_mask{number}.pt"
+            data.append((img_file, binary_mask_file, graph_mask_file))
+            
         splitter = Splitter(data, test_size=self.test_size, shuffle=True, seed=self.seed)
         train_data, val_data = splitter.split()
-        import shutil
-        for subset, image_dir, mask_dir in [
-            (train_data, self.output_dir / "train/roads/images", self.output_dir / "train/roads/masks"),
-            (val_data, self.output_dir / "val/roads/images", self.output_dir / "val/roads/masks")
+
+        for subset, image_dir, binary_mask_dir, graph_mask_dir in [
+            (train_data, self.train_image_dir, self.train_mask_binary_dir, self.train_mask_graph_dir),
+            (val_data, self.val_image_dir, self.val_mask_binary_dir, self.val_mask_graph_dir)
         ]:
-            for img_file, mask_file in subset:
-                try:
-                    src_img_path = self.temp_image_dir / img_file
-                    src_mask_path = self.temp_mask_dir / mask_file
-                    if not src_img_path.exists() or not src_mask_path.exists():
-                        continue
-                    dst_img_path = image_dir / img_file
-                    dst_mask_path = mask_dir / mask_file
-                    shutil.copy2(src_img_path, dst_img_path)
-                    shutil.copy2(src_mask_path, dst_mask_path)
-                except Exception as e:
-                    logger.error(f"Error copying {img_file} and {mask_file}: {str(e)}")
-        gc.collect()
+            for img_file, binary_mask_file, graph_mask_file in subset:
+                shutil.copy2(self.temp_image_dir / img_file, image_dir / img_file)
+                shutil.copy2(self.temp_mask_binary_dir / binary_mask_file, binary_mask_dir / binary_mask_file)
+                shutil.copy2(self.temp_mask_graph_dir / graph_mask_file, graph_mask_dir / graph_mask_file)
+                
+        logger.info("Data splitting completed")
 
     def run(self, stage="all"):
         start_time = time.time()
