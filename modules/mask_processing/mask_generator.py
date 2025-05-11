@@ -167,7 +167,7 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
             coords = np.array(line.coords)
             pixel_coords = []
             for x, y in coords:
-                row_img, col_img = ~transform * (x, y)
+                col_img, row_img = ~transform * (x, y)
                 pixel_coords.append((int(col_img), int(row_img)))
             
             for i in range(len(pixel_coords) - 1):
