@@ -37,16 +37,19 @@ class BuildingDataPreparator:
         self.black_threshold = black_threshold
         self.min_content_ratio = min_content_ratio
         self.temp_image_dir = self.output_dir / "temp/buildings/images"
-        self.temp_mask_dir = self.output_dir / "temp/buildings/masks"
+        self.temp_mask_original_dir = self.output_dir / "temp/buildings/masks_original"
+        self.temp_mask_eroded_dir = self.output_dir / "temp/buildings/masks_eroded"
         self.train_image_dir = self.output_dir / "train/buildings/images"
-        self.train_mask_dir = self.output_dir / "train/buildings/masks"
+        self.train_mask_original_dir = self.output_dir / "train/buildings/masks_original"
+        self.train_mask_eroded_dir = self.output_dir / "train/buildings/masks_eroded"
         self.val_image_dir = self.output_dir / "val/buildings/images"
-        self.val_mask_dir = self.output_dir / "val/buildings/masks"
+        self.val_mask_original_dir = self.output_dir / "val/buildings/masks_original"
+        self.val_mask_eroded_dir = self.output_dir / "val/buildings/masks_eroded"
         self.brightness_factor = brightness_factor
         self.saturation_factor = saturation_factor
-        for path in [self.temp_image_dir, self.temp_mask_dir,
-                    self.train_image_dir, self.train_mask_dir,
-                    self.val_image_dir, self.val_mask_dir]:
+        for path in [self.temp_image_dir, self.temp_mask_original_dir, self.temp_mask_eroded_dir,
+                    self.train_image_dir, self.train_mask_original_dir, self.train_mask_eroded_dir,
+                    self.val_image_dir, self.val_mask_original_dir, self.val_mask_eroded_dir]:
             path.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"Initialized BuildingDataPreparator for {city_name}")
@@ -92,10 +95,13 @@ class BuildingDataPreparator:
                     if np.all(mask_array == 0):
                         continue
                     out_img_path = self.temp_image_dir / f"{self.city_name}_building_img{img_num}.png"
-                    out_mask_path = self.temp_mask_dir / f"{self.city_name}_building_mask{img_num}.png"
+                    out_mask_original_path = self.temp_mask_original_dir / f"{self.city_name}_building_mask{img_num}.png"
+                    out_mask_eroded_path = self.temp_mask_eroded_dir / f"{self.city_name}_building_mask{img_num}.npy"
                     try:
                         self.save_image(image, out_img_path)
-                        self.save_image(mask_array, out_mask_path)
+                        self.save_image(mask_array, out_mask_original_path)
+                        mask_eroded = mask_generator.generate_eroded_mask(mask_array)
+                        np.save(out_mask_eroded_path, mask_eroded)
                     except Exception as e:
                         logger.error(f"Failed to save image/mask for {img_id}: {str(e)}")
                     total_processed += 1
@@ -171,7 +177,7 @@ class BuildingDataPreparator:
     def split_data(self):
         logger.info("Starting data splitting")
         processed_images = os.listdir(self.temp_image_dir)
-        processed_masks = os.listdir(self.temp_mask_dir)
+        processed_masks = os.listdir(self.temp_mask_original_dir)
         image_numbers = set()
         mask_numbers = set()
         for filename in processed_images:
@@ -195,22 +201,30 @@ class BuildingDataPreparator:
             data.append((img_file, mask_file))
         splitter = Splitter(data, test_size=self.test_size, shuffle=True, seed=self.seed)
         train_data, val_data = splitter.split()
-        for subset, image_dir, mask_dir in [
-            (train_data, self.output_dir / "train/buildings/images", self.output_dir / "train/buildings/masks"),
-            (val_data, self.output_dir / "val/buildings/images", self.output_dir / "val/buildings/masks")
+        for subset, image_dir, mask_original_dir, mask_eroded_dir in [
+            (train_data, self.output_dir / "train/buildings/images",
+             self.output_dir / "train/buildings/masks_original", self.output_dir / "train/buildings/masks_eroded"),
+            (val_data, self.output_dir / "val/buildings/images",
+             self.output_dir / "val/buildings/masks_original", self.output_dir / "val/buildings/masks_eroded")
         ]:
             for img_file, mask_file in subset:
                 try:
                     src_img_path = self.temp_image_dir / img_file
-                    src_mask_path = self.temp_mask_dir / mask_file
-                    if not src_img_path.exists() or not src_mask_path.exists():
+                    src_mask_original_path = self.temp_mask_original_dir / mask_file
+                    src_mask_eroded_path = self.temp_mask_eroded_dir / mask_file.replace('.png', '.npy')
+                    
+                    if not all(p.exists() for p in [src_img_path, src_mask_original_path, src_mask_eroded_path]):
                         continue
+                        
                     dst_img_path = image_dir / img_file
-                    dst_mask_path = mask_dir / mask_file
+                    dst_mask_original_path = mask_original_dir / mask_file
+                    dst_mask_eroded_path = mask_eroded_dir / mask_file.replace('.png', '.npy')
+                    
                     shutil.copy2(src_img_path, dst_img_path)
-                    shutil.copy2(src_mask_path, dst_mask_path)
+                    shutil.copy2(src_mask_original_path, dst_mask_original_path)
+                    shutil.copy2(src_mask_eroded_path, dst_mask_eroded_path)
                 except Exception as e:
-                    logger.error(f"Error copying {img_file} and {mask_file}: {str(e)}")
+                    logger.error(f"Error copying files for {img_file}: {str(e)}")
         gc.collect()
 
     def run(self, stage="all"):

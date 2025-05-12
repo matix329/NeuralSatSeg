@@ -18,9 +18,12 @@ class ImageFilter:
         self.roads_mask_dir = os.path.join(processed_dir, "temp/roads/masks")
         self.buildings_image_dir = os.path.join(processed_dir, "temp/buildings/images")
         self.buildings_mask_dir = os.path.join(processed_dir, "temp/buildings/masks")
+        self.buildings_mask_original_dir = os.path.join(processed_dir, "temp/buildings/masks_original")
+        self.buildings_mask_eroded_dir = os.path.join(processed_dir, "temp/buildings/masks_eroded")
 
         for dir_path in [self.roads_image_dir, self.roads_mask_dir,
-                        self.buildings_image_dir, self.buildings_mask_dir]:
+                        self.buildings_image_dir, self.buildings_mask_dir,
+                        self.buildings_mask_original_dir, self.buildings_mask_eroded_dir]:
             if not os.path.exists(dir_path):
                 os.makedirs(dir_path, exist_ok=True)
 
@@ -104,6 +107,13 @@ class ImageFilter:
                             if found_mask:
                                 mask_path = os.path.join(mask_dir, found_mask)
                                 os.remove(mask_path)
+                                if "buildings" in mask_dir:
+                                    mask_original_path = os.path.join(self.buildings_mask_original_dir, found_mask)
+                                    mask_eroded_path = os.path.join(self.buildings_mask_eroded_dir, found_mask.replace('.png', '.npy'))
+                                    if os.path.exists(mask_original_path):
+                                        os.remove(mask_original_path)
+                                    if os.path.exists(mask_eroded_path):
+                                        os.remove(mask_eroded_path)
                             else:
                                 logger.warning(f"No matching mask found for {img_name} (img_num: {img_num}) in {mask_dir}")
                         else:

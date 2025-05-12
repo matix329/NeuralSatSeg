@@ -6,6 +6,7 @@ import os
 import warnings
 import networkx as nx
 import torch
+import cv2
 from torch_geometric.data import Data
 from rasterio.features import rasterize
 from shapely.geometry import mapping
@@ -140,6 +141,14 @@ class BuildingMaskGenerator(BaseMaskGenerator):
             all_touched=True
         )
         return mask
+
+    def generate_eroded_mask(self, mask_array: np.ndarray) -> np.ndarray:
+        binary = (mask_array > 0).astype(np.uint8)
+        kernel = np.ones((3,3), np.uint8)
+        eroded = cv2.erode(binary, kernel, iterations=1)
+        mask_eroded = mask_array.astype(np.int16)
+        mask_eroded[(binary == 1) & (eroded == 0)] = -1
+        return mask_eroded
 
 class RoadGraphMaskGenerator(BaseMaskGenerator):
     def __init__(self, geojson_folder):
