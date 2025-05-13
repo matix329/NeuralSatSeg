@@ -37,14 +37,14 @@ class RoadsDataPreparator:
         self.black_threshold = black_threshold
         self.min_content_ratio = min_content_ratio
         self.temp_image_dir = self.output_dir / "temp/roads/images"
-        self.temp_mask_binary_dir = self.output_dir / "temp/roads/masks-binary"
-        self.temp_mask_graph_dir = self.output_dir / "temp/roads/masks-graph"
+        self.temp_mask_binary_dir = self.output_dir / "temp/roads/masks_binary"
+        self.temp_mask_graph_dir = self.output_dir / "temp/roads/masks_graph"
         self.train_image_dir = self.output_dir / "train/roads/images"
-        self.train_mask_binary_dir = self.output_dir / "train/roads/masks-binary"
-        self.train_mask_graph_dir = self.output_dir / "train/roads/masks-graph"
+        self.train_mask_binary_dir = self.output_dir / "train/roads/masks_binary"
+        self.train_mask_graph_dir = self.output_dir / "train/roads/masks_graph"
         self.val_image_dir = self.output_dir / "val/roads/images"
-        self.val_mask_binary_dir = self.output_dir / "val/roads/masks-binary"
-        self.val_mask_graph_dir = self.output_dir / "val/roads/masks-graph"
+        self.val_mask_binary_dir = self.output_dir / "val/roads/masks_binary"
+        self.val_mask_graph_dir = self.output_dir / "val/roads/masks_graph"
         self.brightness_factor = brightness_factor
         self.saturation_factor = saturation_factor
         
