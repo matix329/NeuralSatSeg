@@ -2,20 +2,24 @@ import os
 import numpy as np
 import mlflow.tensorflow
 import mlflow
+import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from scripts.color_logger import ColorLogger
-from scripts.mlflow_manager import MLflowManager
+from scripts.mlflow_manager import MLflowManager, parse_args
 from scripts.tensorboard import TensorboardManager
 from models_code.metrics.dice_metrics import dice_coefficient, iou_score
 from models_code.metrics.classification_metrics import precision, recall, f1_score
 from config import (
-    BUILDING_MASK_OPTIONS,
-    ROAD_MASK_OPTIONS,
-    SUPPORTED_MODELS,
+    MODEL_TYPE,
+    HEAD_NAMES,
+    LOSS_WEIGHTS,
     DATA_DIR,
     OUTPUT_DIR,
     LOG_DIR,
-    TRAINING_CONFIG
+    TRAINING_CONFIG,
+    BUILDING_MASK_OPTIONS,
+    ROAD_MASK_OPTIONS,
+    MASK_PATHS,
 )
 from data_loader import DataLoader
 from model_factory import ModelFactory
@@ -30,15 +34,13 @@ class ModelTrainer:
         self.log_dir = os.path.join(self.project_root, LOG_DIR)
         
         self.input_shape = TRAINING_CONFIG["input_shape"]
-        self.num_classes = TRAINING_CONFIG["num_classes"]
         self.batch_size = TRAINING_CONFIG["batch_size"]
         self.epochs = TRAINING_CONFIG["epochs"]
         self.learning_rate = TRAINING_CONFIG["learning_rate"]
         
         self.data_loader = DataLoader(
             batch_size=self.batch_size,
-            image_size=self.input_shape[:2],
-            num_classes=self.num_classes
+            image_size=self.input_shape[:2]
         )
         self.mlflow_manager = None
         self.tensorboard_manager = TensorboardManager(log_dir=self.log_dir)
@@ -46,111 +48,130 @@ class ModelTrainer:
 
     def get_user_input(self):
         experiment_name = input("Enter experiment name: ")
-        
+        run_name = input("Enter model/run name: ")
+        output_file = input("Enter output file name (e.g., unet_multi_head.keras): ")
         print("\nAvailable building mask options:")
         for i, option in enumerate(BUILDING_MASK_OPTIONS, 1):
             print(f"{i}. {option}")
         building_mask = BUILDING_MASK_OPTIONS[int(input("Select building mask version (1-2): ")) - 1]
-        
         print("\nAvailable road mask options:")
         for i, option in enumerate(ROAD_MASK_OPTIONS, 1):
             print(f"{i}. {option}")
         road_mask = ROAD_MASK_OPTIONS[int(input("Select road mask version (1-2): ")) - 1]
-        
-        run_name = input("Enter model/run name: ")
-        
-        print("\nAvailable model types:")
-        for i, model in enumerate(SUPPORTED_MODELS, 1):
-            print(f"{i}. {model.upper()}")
-        model_type = SUPPORTED_MODELS[int(input("Select model type (1-2): ")) - 1]
-        
-        output_file = input("Enter output file name (e.g., cnn_buildings_graph.keras): ")
-        
-        description = f"Experiment: {experiment_name}\n" \
-                     f"Model: {model_type}\n" \
-                     f"Building mask: {building_mask}\n" \
-                     f"Road mask: {road_mask}"
-        
-        return experiment_name, building_mask, road_mask, run_name, model_type, output_file, description
+        MASK_PATHS['buildings'] = building_mask
+        MASK_PATHS['roads'] = road_mask
+        self.logger.info(f"[TRAIN_MANAGER] MASK_PATHS: {MASK_PATHS}")
+        return experiment_name, run_name, output_file, building_mask, road_mask
 
-    def load_data(self, mask_type):
+    def load_data(self):
         train_dir = os.path.join(self.data_dir, "train")
         val_dir = os.path.join(self.data_dir, "val")
 
-        data_type = "buildings" if "buildings" in mask_type else "roads"
-        
-        train_images = os.path.join(train_dir, data_type, "images")
-        train_masks = os.path.join(train_dir, data_type, mask_type)
-        val_images = os.path.join(val_dir, data_type, "images")
-        val_masks = os.path.join(val_dir, data_type, mask_type)
-        
-        if not os.path.exists(train_images):
-            raise FileNotFoundError(f"Training images directory not found: {train_images}")
-        if not os.path.exists(train_masks):
-            raise FileNotFoundError(f"Training masks directory not found: {train_masks}")
-        if not os.path.exists(val_images):
-            raise FileNotFoundError(f"Validation images directory not found: {val_images}")
-        if not os.path.exists(val_masks):
-            raise FileNotFoundError(f"Validation masks directory not found: {val_masks}")
-        
-        train_data = self.data_loader.load(train_images, train_masks)
-        val_data = self.data_loader.load(val_images, val_masks)
-        
+        if not os.path.exists(train_dir):
+            raise FileNotFoundError(f"Training directory not found: {train_dir}")
+        if not os.path.exists(val_dir):
+            raise FileNotFoundError(f"Validation directory not found: {val_dir}")
+
+        train_data = self.data_loader.load(train_dir)
+        val_data = self.data_loader.load(val_dir)
+
         return train_data, val_data
 
     def train(self):
-        experiment_name, building_mask, road_mask, run_name, model_type, output_file, description = self.get_user_input()
+        args = parse_args()
+        experiment_name, run_name, output_file, building_mask, road_mask = self.get_user_input()
         
         self.logger.info("Starting training process...")
         mlflow.tensorflow.autolog(disable=True)
-        self.mlflow_manager = MLflowManager(experiment_name)
+        self.mlflow_manager = MLflowManager(experiment_name, args.description)
         self.mlflow_manager.start_run(run_name=run_name)
         
-        mlflow.set_tag("description", description)
+        train_data, val_data = self.load_data()
         
-        train_data, val_data = self.load_data(building_mask if "buildings" in building_mask else road_mask)
+        self.model = ModelFactory.create_model(MODEL_TYPE)
+
+        metrics = [
+            'accuracy',
+            dice_coefficient,
+            iou_score,
+            precision,
+            recall,
+            f1_score
+        ]
+        loss_dict = {}
+        metrics_dict = {}
+        for head_name in HEAD_NAMES:
+            loss_dict[f'head_{head_name}'] = 'binary_crossentropy'
+            metrics_dict[f'head_{head_name}'] = metrics
         
-        model = ModelFactory.create_model(model_type)
-        model.compile(
+        self.model.compile(
             optimizer=Adam(learning_rate=self.learning_rate),
-            loss="binary_crossentropy",
-            metrics=["accuracy", dice_coefficient, iou_score, precision, recall, f1_score]
+            loss=loss_dict,
+            loss_weights=LOSS_WEIGHTS,
+            metrics=metrics_dict
         )
+        self.logger.info(f"[TRAIN_MANAGER] Model output names: {self.model.output_names}")
+        self.logger.info(f"[TRAIN_MANAGER] Loss dict keys: {list(loss_dict.keys())}")
+        self.logger.info(f"[TRAIN_MANAGER] Metrics dict keys: {list(metrics_dict.keys())}")
         
         self.mlflow_manager.log_params({
-            "model_type": model_type,
-            "building_mask": building_mask,
-            "road_mask": road_mask,
+            "model_type": MODEL_TYPE,
             "input_shape": self.input_shape,
-            "num_classes": self.num_classes,
             "batch_size": self.batch_size,
             "epochs": self.epochs,
-            "learning_rate": self.learning_rate
+            "learning_rate": self.learning_rate,
+            "loss_weights": LOSS_WEIGHTS,
+            "building_mask": building_mask,
+            "road_mask": road_mask
         })
         
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
-        tensorboard_callback = self.tensorboard_manager.get_callback(experiment_name=experiment_name)
+        validation_steps = max(1, val_data.cardinality().numpy() // self.batch_size)
+        
+        callbacks = [
+            self.tensorboard_manager.get_callback(experiment_name=experiment_name),
+            tf.keras.callbacks.ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.1,
+                patience=5,
+                verbose=1
+            ),
+            tf.keras.callbacks.EarlyStopping(
+                monitor='val_loss',
+                patience=10,
+                verbose=1,
+                restore_best_weights=True
+            ),
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath=os.path.join(self.output_dir, f"best_{output_file}"),
+                monitor='val_loss',
+                save_best_only=True,
+                verbose=1
+            )
+        ]
         
         for epoch in range(self.epochs):
             self.logger.info(f"Epoch {epoch + 1}/{self.epochs}")
             try:
-                history = model.fit(
+                history = self.model.fit(
                     train_data.repeat(),
                     validation_data=val_data,
                     epochs=1,
                     steps_per_epoch=steps_per_epoch,
-                    callbacks=[tensorboard_callback]
+                    validation_steps=validation_steps,
+                    callbacks=callbacks
                 )
                 
                 train_metrics = {key: values[-1] for key, values in history.history.items() if values[-1] is not None}
-                
-                self.logger.info(
-                    f"Epoch {epoch + 1}/{self.epochs} - "
-                    f"train_loss: {train_metrics.get('loss', 'N/A'):.4f}, "
-                    f"train_accuracy: {train_metrics.get('accuracy', 'N/A'):.4f}, "
-                    f"val_loss: {train_metrics.get('val_loss', 'N/A'):.4f}, "
-                    f"val_accuracy: {train_metrics.get('val_accuracy', 'N/A'):.4f}"
-                )
+
+                for head_name in HEAD_NAMES:
+                    self.logger.info(
+                        f"Epoch {epoch + 1}/{self.epochs} - {head_name} - "
+                        f"train_loss: {train_metrics.get(f'head_{head_name}_loss', 'N/A'):.4f}, "
+                        f"train_accuracy: {train_metrics.get(f'head_{head_name}_accuracy', 'N/A'):.4f}, "
+                        f"val_loss: {train_metrics.get(f'val_head_{head_name}_loss', 'N/A'):.4f}, "
+                        f"val_accuracy: {train_metrics.get(f'val_head_{head_name}_accuracy', 'N/A'):.4f}"
+                    )
                 
                 for key, value in train_metrics.items():
                     mlflow.log_metric(key, value, step=epoch)
@@ -161,10 +182,10 @@ class ModelTrainer:
         
         os.makedirs(self.output_dir, exist_ok=True)
         output_path = os.path.join(self.output_dir, output_file)
-        model.save(output_path)
+        self.model.save(output_path)
         
         input_example = np.random.random((1, *self.input_shape)).astype(np.float32)
-        self.mlflow_manager.log_model(model, model_name=model_type.lower(), input_example=input_example)
+        self.mlflow_manager.log_model(self.model, model_name=MODEL_TYPE.lower(), input_example=input_example)
         self.mlflow_manager.end_run()
         
         self.logger.info("Training and evaluation process completed.")

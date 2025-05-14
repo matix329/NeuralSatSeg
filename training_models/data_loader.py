@@ -1,31 +1,37 @@
 import tensorflow as tf
+from config import MASK_PATHS
 
 class DataLoader:
-    def __init__(self, batch_size, image_size, num_classes):
+    def __init__(self, batch_size, image_size):
         self.batch_size = batch_size
         self.image_size = image_size
-        self.num_classes = num_classes
 
-    def load(self, image_dir, mask_dir=None):
-        image_paths = tf.data.Dataset.list_files(f"{image_dir}/*.png", shuffle=True)
+    def load(self, data_dir):
+        building_images = tf.data.Dataset.list_files(f"{data_dir}/buildings/images/*.png", shuffle=True)
+        building_masks = tf.data.Dataset.list_files(f"{data_dir}/buildings/{MASK_PATHS['buildings']}/*.png", shuffle=True)
+        ds_buildings = tf.data.Dataset.zip((building_images, building_masks))
 
-        if mask_dir:
-            mask_paths = tf.data.Dataset.list_files(f"{mask_dir}/*.png", shuffle=True)
-            dataset = tf.data.Dataset.zip((image_paths, mask_paths))
+        def process_building(image_path, mask_path):
+            image = self.load_image(image_path)
+            building_mask = self.load_mask(mask_path)
+            road_mask = tf.zeros_like(building_mask)
+            return image, {'buildings': building_mask, 'roads': road_mask}
 
-            def process(image_path, mask_path):
-                image = self.load_image(image_path)
-                mask = self.load_mask(mask_path)
-                return image, mask
+        ds_buildings = ds_buildings.map(process_building, num_parallel_calls=tf.data.AUTOTUNE)
 
-            dataset = dataset.map(process, num_parallel_calls=tf.data.AUTOTUNE)
-        else:
-            def process(image_path):
-                image = self.load_image(image_path)
-                return image
+        road_images = tf.data.Dataset.list_files(f"{data_dir}/roads/images/*.png", shuffle=True)
+        road_masks = tf.data.Dataset.list_files(f"{data_dir}/roads/{MASK_PATHS['roads']}/*.png", shuffle=True)
+        ds_roads = tf.data.Dataset.zip((road_images, road_masks))
 
-            dataset = image_paths.map(process, num_parallel_calls=tf.data.AUTOTUNE)
+        def process_road(image_path, mask_path):
+            image = self.load_image(image_path)
+            road_mask = self.load_mask(mask_path)
+            building_mask = tf.zeros_like(road_mask)
+            return image, {'buildings': building_mask, 'roads': road_mask}
 
+        ds_roads = ds_roads.map(process_road, num_parallel_calls=tf.data.AUTOTUNE)
+
+        dataset = ds_buildings.concatenate(ds_roads)
         dataset = dataset.batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
         return dataset
 
@@ -41,5 +47,5 @@ class DataLoader:
         mask = tf.image.decode_png(mask, channels=1)
         mask = tf.image.resize(mask, self.image_size)
         mask = tf.ensure_shape(mask, [self.image_size[0], self.image_size[1], 1])
-        mask = tf.math.round(mask)
+        mask = tf.cast(mask, tf.float32) / 255.0
         return mask

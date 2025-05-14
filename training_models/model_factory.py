@@ -1,6 +1,6 @@
 from models_code.unet.unet import UNET
 from models_code.cnn.cnn import CNN
-from config import SUPPORTED_MODELS, TRAINING_CONFIG
+from config import SUPPORTED_MODELS, TRAINING_CONFIG, HEAD_NAMES
 
 class ModelFactory:
     @staticmethod
@@ -11,10 +11,17 @@ class ModelFactory:
         if model_type.lower() == "unet":
             return UNET(
                 input_shape=TRAINING_CONFIG["input_shape"],
-                num_classes=TRAINING_CONFIG["num_classes"]
+                num_classes=1,
+                activation='leaky_relu',
+                dropout_rate=0.4,
+                output_activation='sigmoid',
+                multi_head=True,
+                head_names=HEAD_NAMES
             ).build_model()
         elif model_type.lower() == "cnn":
             return CNN(
                 input_shape=TRAINING_CONFIG["input_shape"],
-                num_classes=TRAINING_CONFIG["num_classes"]
+                num_classes=1,
+                multi_head=True,
+                head_names=HEAD_NAMES
             ).build_model() 
