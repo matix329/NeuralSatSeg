@@ -12,16 +12,15 @@ class ModelFactory:
             return UNET(
                 input_shape=TRAINING_CONFIG["input_shape"],
                 num_classes=1,
-                activation='leaky_relu',
-                dropout_rate=0.4,
-                output_activation='sigmoid',
                 multi_head=True,
-                head_names=HEAD_NAMES
+                head_names=HEAD_NAMES,
+                use_binary_embedding=True
             ).build_model()
         elif model_type.lower() == "cnn":
             return CNN(
                 input_shape=TRAINING_CONFIG["input_shape"],
                 num_classes=1,
                 multi_head=True,
-                head_names=HEAD_NAMES
+                head_names=HEAD_NAMES,
+                use_binary_embedding=True
             ).build_model() 

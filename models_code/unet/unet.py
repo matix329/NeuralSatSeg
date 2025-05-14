@@ -22,30 +22,34 @@ class UNET:
             binary_input = layers.Input(shape=self.input_shape[:2] + (1,))
         x = inputs
         skips = []
+        if self.use_binary_embedding:
+            binary_emb = binary_input
         for filters in [64, 128, 256]:
             if self.use_binary_embedding:
-                binary_emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_input)
-                x = layers.Concatenate()([x, binary_emb])
+                emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_emb)
+                x = layers.Concatenate()([x, emb])
             x = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(x)
             x = layers.BatchNormalization()(x)
             skips.append(x)
             x = layers.MaxPooling2D((2, 2))(x)
+            if self.use_binary_embedding:
+                binary_emb = layers.MaxPooling2D((2, 2))(binary_emb)
         b = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
         b = layers.BatchNormalization()(b)
         for filters, skip in zip([256, 128, 64], reversed(skips)):
             b = layers.UpSampling2D((2, 2))(b)
             if self.use_binary_embedding:
-                binary_emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_input)
-                b = layers.Concatenate()([b, skip, binary_emb])
+                binary_emb = layers.UpSampling2D((2, 2))(binary_emb)
+                emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_emb)
+                b = layers.Concatenate()([b, skip, emb])
             else:
                 b = layers.Concatenate()([b, skip])
             b = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(b)
             b = layers.BatchNormalization()(b)
         if self.multi_head and self.head_names:
-            outputs = []
+            outputs = {}
             for head_name in self.head_names:
-                out = layers.Conv2D(1, (1, 1), activation='sigmoid', name=f'head_{head_name}')(b)
-                outputs.append(out)
+                outputs[f'head_{head_name}'] = layers.Conv2D(1, (1, 1), activation='sigmoid', name=f'head_{head_name}')(b)
             if self.use_binary_embedding:
                 return models.Model([inputs, binary_input], outputs)
             else:

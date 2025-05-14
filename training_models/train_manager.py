@@ -74,7 +74,6 @@ class ModelTrainer:
 
         train_data = self.data_loader.load(train_dir)
         val_data = self.data_loader.load(val_dir)
-
         return train_data, val_data
 
     def train(self):
@@ -164,13 +163,16 @@ class ModelTrainer:
                 
                 train_metrics = {key: values[-1] for key, values in history.history.items() if values[-1] is not None}
 
+                def safe_fmt(val):
+                    return f"{val:.4f}" if isinstance(val, (float, int)) else str(val)
+
                 for head_name in HEAD_NAMES:
                     self.logger.info(
                         f"Epoch {epoch + 1}/{self.epochs} - {head_name} - "
-                        f"train_loss: {train_metrics.get(f'head_{head_name}_loss', 'N/A'):.4f}, "
-                        f"train_accuracy: {train_metrics.get(f'head_{head_name}_accuracy', 'N/A'):.4f}, "
-                        f"val_loss: {train_metrics.get(f'val_head_{head_name}_loss', 'N/A'):.4f}, "
-                        f"val_accuracy: {train_metrics.get(f'val_head_{head_name}_accuracy', 'N/A'):.4f}"
+                        f"train_loss: {safe_fmt(train_metrics.get(f'head_{head_name}_loss', 'N/A'))}, "
+                        f"train_accuracy: {safe_fmt(train_metrics.get(f'head_{head_name}_accuracy', 'N/A'))}, "
+                        f"val_loss: {safe_fmt(train_metrics.get(f'val_head_{head_name}_loss', 'N/A'))}, "
+                        f"val_accuracy: {safe_fmt(train_metrics.get(f'val_head_{head_name}_accuracy', 'N/A'))}"
                     )
                 
                 for key, value in train_metrics.items():

@@ -8,26 +8,28 @@ class DataLoader:
 
     def load(self, data_dir):
         building_images = tf.data.Dataset.list_files(f"{data_dir}/buildings/images/*.png", shuffle=True)
-        building_masks = tf.data.Dataset.list_files(f"{data_dir}/buildings/{MASK_PATHS['buildings']}/*.png", shuffle=True)
+        building_masks = tf.data.Dataset.list_files(f"{data_dir}/buildings/{MASK_PATHS['buildings']}/*.png", shuffle=False)
         ds_buildings = tf.data.Dataset.zip((building_images, building_masks))
 
         def process_building(image_path, mask_path):
             image = self.load_image(image_path)
             building_mask = self.load_mask(mask_path)
             road_mask = tf.zeros_like(building_mask)
-            return image, {'buildings': building_mask, 'roads': road_mask}
+            binary_map = tf.zeros_like(image[..., :1])
+            return (image, binary_map), {'head_buildings': building_mask, 'head_roads': road_mask}
 
         ds_buildings = ds_buildings.map(process_building, num_parallel_calls=tf.data.AUTOTUNE)
 
         road_images = tf.data.Dataset.list_files(f"{data_dir}/roads/images/*.png", shuffle=True)
-        road_masks = tf.data.Dataset.list_files(f"{data_dir}/roads/{MASK_PATHS['roads']}/*.png", shuffle=True)
+        road_masks = tf.data.Dataset.list_files(f"{data_dir}/roads/{MASK_PATHS['roads']}/*.png", shuffle=False)
         ds_roads = tf.data.Dataset.zip((road_images, road_masks))
 
         def process_road(image_path, mask_path):
             image = self.load_image(image_path)
             road_mask = self.load_mask(mask_path)
             building_mask = tf.zeros_like(road_mask)
-            return image, {'buildings': building_mask, 'roads': road_mask}
+            binary_map = tf.zeros_like(image[..., :1])
+            return (image, binary_map), {'head_buildings': building_mask, 'head_roads': road_mask}
 
         ds_roads = ds_roads.map(process_road, num_parallel_calls=tf.data.AUTOTUNE)
 
