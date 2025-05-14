@@ -2,19 +2,22 @@ import mlflow.keras
 from mlflow.models.signature import infer_signature
 import os
 import json
+import argparse
 
 class MLflowManager:
-    def __init__(self, experiment_name):
+    def __init__(self, experiment_name, description=None):
         mlflow.set_tracking_uri("http://localhost:5001")
         mlflow.set_experiment(experiment_name)
         self.experiment_name = experiment_name
-
         base_dir = os.path.dirname(os.path.abspath(__file__))
         self.input_example_dir = os.path.join(base_dir, "../mlflow_artifacts/input_examples")
         os.makedirs(self.input_example_dir, exist_ok=True)
+        self.description = description
 
-    def start_run(self, run_name=None):
+    def start_run(self, run_name=None, description=None):
         self.run = mlflow.start_run(run_name=run_name)
+        if description:
+            mlflow.set_tag("Description", description)
 
     def log_params(self, params):
         for key, value in params.items():
@@ -54,3 +57,8 @@ class MLflowManager:
 
     def end_run(self):
         mlflow.end_run()
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train segmentation model with MLflow tracking')
+    parser.add_argument('--description', type=str, help='Description of the experiment')
+    return parser.parse_args()

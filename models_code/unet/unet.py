@@ -1,14 +1,13 @@
 from tensorflow.keras import layers, models
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from models_code.unet.blocks import conv_block, encoder_block, decoder_block
 
 class UNET:
-    def __init__(self, input_shape=(512, 512, 4), num_classes=1, activation='leaky_relu', dropout_rate=0.4, output_activation='sigmoid'):
+    def __init__(self, input_shape=(512, 512, 3), num_classes=1, multi_head=False, head_names=None, use_binary_embedding=False):
         self.input_shape = input_shape
         self.num_classes = num_classes
-        self.activation = activation
-        self.dropout_rate = dropout_rate
-        self.output_activation = output_activation
+        self.multi_head = multi_head
+        self.head_names = head_names
+        self.use_binary_embedding = use_binary_embedding
         self.datagen = ImageDataGenerator(
             rotation_range=10,
             width_shift_range=0.05,
@@ -19,23 +18,48 @@ class UNET:
 
     def build_model(self):
         inputs = layers.Input(shape=self.input_shape)
-
-        enc_filters = [64, 128, 256]
-        encoders = []
+        if self.use_binary_embedding:
+            binary_input = layers.Input(shape=self.input_shape[:2] + (1,))
         x = inputs
-        for filters in enc_filters:
-            s, x = encoder_block(x, filters, activation=self.activation, dropout_rate=self.dropout_rate)
-            encoders.append(s)
-
-        b = conv_block(x, 512, activation=self.activation, dropout_rate=self.dropout_rate)
-
-        dec_filters = [256, 128, 64]
-        for filters, skip in zip(dec_filters, reversed(encoders)):
-            b = decoder_block(b, skip, filters, activation=self.activation, dropout_rate=self.dropout_rate)
-
-        outputs = layers.Conv2D(self.num_classes, kernel_size=(1, 1), activation=self.output_activation, padding='same')(b)
-
-        return models.Model(inputs, outputs)
+        skips = []
+        if self.use_binary_embedding:
+            binary_emb = binary_input
+        for filters in [64, 128, 256]:
+            if self.use_binary_embedding:
+                emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_emb)
+                x = layers.Concatenate()([x, emb])
+            x = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(x)
+            x = layers.BatchNormalization()(x)
+            skips.append(x)
+            x = layers.MaxPooling2D((2, 2))(x)
+            if self.use_binary_embedding:
+                binary_emb = layers.MaxPooling2D((2, 2))(binary_emb)
+        b = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+        b = layers.BatchNormalization()(b)
+        for filters, skip in zip([256, 128, 64], reversed(skips)):
+            b = layers.UpSampling2D((2, 2))(b)
+            if self.use_binary_embedding:
+                binary_emb = layers.UpSampling2D((2, 2))(binary_emb)
+                emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_emb)
+                b = layers.Concatenate()([b, skip, emb])
+            else:
+                b = layers.Concatenate()([b, skip])
+            b = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(b)
+            b = layers.BatchNormalization()(b)
+        if self.multi_head and self.head_names:
+            outputs = {}
+            for head_name in self.head_names:
+                outputs[f'head_{head_name}'] = layers.Conv2D(1, (1, 1), activation='sigmoid', name=f'head_{head_name}')(b)
+            if self.use_binary_embedding:
+                return models.Model([inputs, binary_input], outputs)
+            else:
+                return models.Model(inputs, outputs)
+        else:
+            out = layers.Conv2D(self.num_classes, (1, 1), activation='sigmoid')(b)
+            if self.use_binary_embedding:
+                return models.Model([inputs, binary_input], out)
+            else:
+                return models.Model(inputs, out)
 
     def augment_data(self, train_images, train_masks, batch_size=16):
         image_gen = self.datagen.flow(train_images, batch_size=batch_size, seed=42)
