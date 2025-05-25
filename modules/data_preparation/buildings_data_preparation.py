@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 
 from modules.image_processing.image_loading import ImageLoader
-from modules.mask_processing.mask_generator import BuildingMaskGenerator
+from modules.mask_processing.buildings_masks import BuildingMaskGenerator
 from modules.splitter.splitter import Splitter
 from modules.image_filtering.image_filtering import ImageFilter
 

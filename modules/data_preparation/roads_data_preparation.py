@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 
 from modules.image_processing.image_loading import ImageLoader
-from modules.mask_processing.mask_generator import RoadMaskGenerator, RoadGraphMaskGenerator
+from modules.mask_processing.roads_masks import RoadBinaryMaskGenerator, RoadGraphMaskGenerator
 from modules.splitter.splitter import Splitter
 from modules.image_filtering.image_filtering import ImageFilter
 
@@ -63,7 +63,7 @@ class RoadsDataPreparator:
             return
             
         loader = ImageLoader(self.source_folder, category='roads', batch_size=self.batch_size)
-        binary_mask_generator = RoadMaskGenerator(geojson_folder=self.geojson_folder, line_width=1)
+        binary_mask_generator = RoadBinaryMaskGenerator(geojson_folder=self.geojson_folder)
         graph_mask_generator = RoadGraphMaskGenerator(geojson_folder=self.geojson_folder)
         
         total_processed = 0
