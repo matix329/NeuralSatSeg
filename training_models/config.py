@@ -8,7 +8,7 @@ SUPPORTED_MODELS = ["unet", "cnn"]
 MODEL_TYPE = 'unet'
 NUM_HEADS = 2
 HEAD_NAMES = ['buildings', 'roads']
-LOSS_WEIGHTS = {'buildings': 1.0, 'roads': 1.0}
+LOSS_WEIGHTS = {'buildings': 1.0, 'roads': 5.0}
 
 DATA_DIR = "data/processed"
 OUTPUT_DIR = "output/mlflow_artifacts/models"
@@ -18,12 +18,11 @@ TRAINING_CONFIG = {
     "input_shape": (512, 512, 3),
     "num_classes": 1,
     "batch_size": 16,
-    "epochs": 30,
+    "epochs": 10,
     "learning_rate": 0.0001,
 }
 
 MASK_EXTENSIONS = {
-    ".npy": "numpy",
     ".pt": "torch",
     ".png": "image"
 }
@@ -31,4 +30,16 @@ MASK_EXTENSIONS = {
 MASK_PATHS = {
     'buildings': f'buildings/{SELECTED_BUILDING_MASK}',
     'roads': f'roads/{SELECTED_ROAD_MASK}'
+}
+
+MASK_CONFIG = {
+    'buildings': {
+        'min_pixels': 100,
+        'erosion_kernel_size': 3,
+        'erosion_iterations': 1
+    },
+    'roads': {
+        'min_pixels': 100,
+        'line_width': 5
+    }
 }

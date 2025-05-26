@@ -5,7 +5,6 @@ import os
 from typing import Tuple, Optional
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from modules.mask_processing.buildings_masks import BuildingMaskGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +52,7 @@ class BaseMaskGenerator(ABC):
             return None
             
         transform, crs, _ = self.get_tiff_parameters(img_id)
-        dtype = np.float32 if isinstance(self, BuildingMaskGenerator) else np.uint8
+        dtype = np.float32 if mask.dtype == np.float32 else np.uint8
         
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
