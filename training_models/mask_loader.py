@@ -6,8 +6,12 @@ from config import MASK_EXTENSIONS, HEAD_NAMES, MASK_PATHS, MASK_CONFIG
 from modules.mask_processing.mask_generator import MaskConfig
 from modules.mask_processing.buildings_masks import BuildingMaskGenerator
 from modules.mask_processing.roads_masks import RoadBinaryMaskGenerator, RoadGraphMaskGenerator
+from scripts.color_logger import ColorLogger
 
 class MaskLoader:
+    def __init__(self):
+        self.logger = ColorLogger("MaskLoader").get_logger()
+
     @staticmethod
     def load_mask(mask_path, class_name=None):
         _, ext = os.path.splitext(mask_path)
@@ -27,7 +31,11 @@ class MaskLoader:
             raise ValueError(f"Unknown loading type: {loader_type}")
             
         if class_name is not None and not isinstance(mask, dict):
-            return mask.astype(np.float32) / 255.0
+            mask = mask.astype(np.float32) / 255.0
+            if class_name == 'roads' and np.sum(mask) == 0:
+                image_name = os.path.basename(mask_path)
+                print(f"Warning: empty road mask for {image_name}")
+            return mask
         return mask
 
     @staticmethod

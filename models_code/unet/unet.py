@@ -1,5 +1,7 @@
 from tensorflow.keras import layers, models
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from .blocks import conv_block, encoder_block, decoder_block
+from training_models.config import TRAINING_CONFIG
 
 class UNET:
     def __init__(self, input_shape=(512, 512, 3), num_classes=1, multi_head=False, head_names=None, use_binary_embedding=False):
@@ -8,6 +10,7 @@ class UNET:
         self.multi_head = multi_head
         self.head_names = head_names
         self.use_binary_embedding = use_binary_embedding
+        self.dropout_rate = TRAINING_CONFIG.get('dropout_rate', 0.0)
         self.datagen = ImageDataGenerator(
             rotation_range=10,
             width_shift_range=0.05,
@@ -24,28 +27,26 @@ class UNET:
         skips = []
         if self.use_binary_embedding:
             binary_emb = binary_input
+
         for filters in [64, 128, 256]:
             if self.use_binary_embedding:
                 emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_emb)
                 x = layers.Concatenate()([x, emb])
-            x = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(x)
-            x = layers.BatchNormalization()(x)
+            x, p = encoder_block(x, filters, dropout_rate=self.dropout_rate)
             skips.append(x)
-            x = layers.MaxPooling2D((2, 2))(x)
+            x = p
             if self.use_binary_embedding:
                 binary_emb = layers.MaxPooling2D((2, 2))(binary_emb)
-        b = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
-        b = layers.BatchNormalization()(b)
+
+        b = conv_block(x, 512, dropout_rate=self.dropout_rate)
+
         for filters, skip in zip([256, 128, 64], reversed(skips)):
-            b = layers.UpSampling2D((2, 2))(b)
+            b = decoder_block(b, skip, filters, dropout_rate=self.dropout_rate)
             if self.use_binary_embedding:
                 binary_emb = layers.UpSampling2D((2, 2))(binary_emb)
                 emb = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(binary_emb)
-                b = layers.Concatenate()([b, skip, emb])
-            else:
-                b = layers.Concatenate()([b, skip])
-            b = layers.Conv2D(filters, (3, 3), activation='relu', padding='same')(b)
-            b = layers.BatchNormalization()(b)
+                b = layers.Concatenate()([b, emb])
+
         if self.multi_head and self.head_names:
             outputs = {}
             for head_name in self.head_names:

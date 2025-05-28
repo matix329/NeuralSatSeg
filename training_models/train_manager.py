@@ -9,6 +9,7 @@ from scripts.mlflow_manager import MLflowManager, parse_args
 from scripts.tensorboard import TensorboardManager
 from models_code.metrics.dice_metrics import dice_coefficient, iou_score
 from models_code.metrics.classification_metrics import precision, recall, f1_score
+from models_code.metrics.custom_losses import FocalLoss, DiceLoss
 from config import (
     MODEL_TYPE,
     HEAD_NAMES,
@@ -89,7 +90,7 @@ class ModelTrainer:
         
         self.model = ModelFactory.create_model(MODEL_TYPE)
 
-        metrics = [
+        building_metrics = [
             'accuracy',
             dice_coefficient,
             iou_score,
@@ -97,11 +98,24 @@ class ModelTrainer:
             recall,
             f1_score
         ]
-        loss_dict = {}
-        metrics_dict = {}
-        for head_name in HEAD_NAMES:
-            loss_dict[f'head_{head_name}'] = 'binary_crossentropy'
-            metrics_dict[f'head_{head_name}'] = metrics
+        
+        road_metrics = [
+            dice_coefficient,
+            iou_score,
+            precision,
+            recall,
+            f1_score
+        ]
+        
+        loss_dict = {
+            'head_buildings': DiceLoss(),
+            'head_roads': FocalLoss(alpha=0.25, gamma=2.0, from_logits=MASK_PATHS['roads'] == ROAD_MASK_OPTIONS[1])
+        }
+        
+        metrics_dict = {
+            'head_buildings': building_metrics,
+            'head_roads': road_metrics
+        }
         
         self.model.compile(
             optimizer=Adam(learning_rate=self.learning_rate),
@@ -167,12 +181,14 @@ class ModelTrainer:
                     return f"{val:.4f}" if isinstance(val, (float, int)) else str(val)
 
                 for head_name in HEAD_NAMES:
+                    metrics_str = []
+                    for metric in ['loss', 'dice_coefficient', 'iou_score', 'f1_score']:
+                        train_val = train_metrics.get(f'head_{head_name}_{metric}', 'N/A')
+                        val_val = train_metrics.get(f'val_head_{head_name}_{metric}', 'N/A')
+                        metrics_str.append(f"{metric}: {safe_fmt(train_val)}/{safe_fmt(val_val)}")
+                    
                     self.logger.info(
-                        f"Epoch {epoch + 1}/{self.epochs} - {head_name} - "
-                        f"train_loss: {safe_fmt(train_metrics.get(f'head_{head_name}_loss', 'N/A'))}, "
-                        f"train_accuracy: {safe_fmt(train_metrics.get(f'head_{head_name}_accuracy', 'N/A'))}, "
-                        f"val_loss: {safe_fmt(train_metrics.get(f'val_head_{head_name}_loss', 'N/A'))}, "
-                        f"val_accuracy: {safe_fmt(train_metrics.get(f'val_head_{head_name}_accuracy', 'N/A'))}"
+                        f"Epoch {epoch + 1}/{self.epochs} - {head_name} - " + " | ".join(metrics_str)
                     )
                 
                 for key, value in train_metrics.items():

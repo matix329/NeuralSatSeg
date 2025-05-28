@@ -1,5 +1,7 @@
 import tensorflow as tf
-from config import MASK_PATHS
+import torch
+import numpy as np
+from config import MASK_PATHS, MASK_EXTENSIONS, ROAD_MASK_OPTIONS
 
 class DataLoader:
     def __init__(self, batch_size, image_size):
@@ -21,7 +23,8 @@ class DataLoader:
         ds_buildings = ds_buildings.map(process_building, num_parallel_calls=tf.data.AUTOTUNE)
 
         road_images = tf.data.Dataset.list_files(f"{data_dir}/roads/images/*.png", shuffle=True)
-        road_masks = tf.data.Dataset.list_files(f"{data_dir}/roads/{MASK_PATHS['roads']}/*.png", shuffle=False)
+        road_mask_extension = ".pt" if MASK_PATHS['roads'] == ROAD_MASK_OPTIONS[1] else ".png"
+        road_masks = tf.data.Dataset.list_files(f"{data_dir}/roads/{MASK_PATHS['roads']}/*{road_mask_extension}", shuffle=False)
         ds_roads = tf.data.Dataset.zip((road_images, road_masks))
 
         def process_road(image_path, mask_path):
@@ -45,9 +48,66 @@ class DataLoader:
         return image
 
     def load_mask(self, mask_path):
-        mask = tf.io.read_file(mask_path)
-        mask = tf.image.decode_png(mask, channels=1)
-        mask = tf.image.resize(mask, self.image_size)
-        mask = tf.ensure_shape(mask, [self.image_size[0], self.image_size[1], 1])
-        mask = tf.cast(mask, tf.float32) / 255.0
+        def load_pt_mask(path):
+            path_str = path.numpy().decode('utf-8')
+            mask_data = torch.load(path_str)
+            
+            if isinstance(mask_data, dict):
+                if 'mask' in mask_data:
+                    mask = mask_data['mask']
+                elif 'graph' in mask_data:
+                    mask = mask_data['graph']
+                else:
+                    raise ValueError(f"Unknown mask format in {path_str}")
+            else:
+                mask = mask_data
+                
+            if isinstance(mask, torch.Tensor):
+                mask = mask.numpy()
+            
+            if mask.dtype != np.float32:
+                mask = mask.astype(np.float32)
+                
+            if len(mask.shape) == 2:
+                mask = np.expand_dims(mask, axis=-1)
+                
+            return mask
+
+        def load_png_mask(path):
+            mask = tf.io.read_file(path)
+            mask = tf.image.decode_png(mask, channels=1)
+            mask = tf.cast(mask, tf.float32)
+            return mask
+
+        def process_mask(mask):
+            if isinstance(mask, np.ndarray):
+                mask = tf.convert_to_tensor(mask)
+            
+            rank = tf.rank(mask)
+            mask = tf.cond(
+                tf.equal(rank, 2),
+                lambda: tf.expand_dims(mask, axis=-1),
+                lambda: mask
+            )
+            
+            shape = tf.shape(mask)
+            mask = tf.reshape(mask, [shape[0], shape[1], 1])
+            mask = tf.image.resize(mask, self.image_size)
+            mask = tf.ensure_shape(mask, [self.image_size[0], self.image_size[1], 1])
+            return mask
+
+        mask_path_str = tf.strings.as_string(mask_path)
+        is_pt = tf.strings.regex_full_match(mask_path_str, ".*\\.pt$")
+        
+        mask = tf.cond(
+            is_pt,
+            lambda: tf.py_function(load_pt_mask, [mask_path], tf.float32),
+            lambda: load_png_mask(mask_path)
+        )
+        
+        mask = process_mask(mask)
+        
+        if not is_pt:
+            mask = mask / 255.0
+            
         return mask
