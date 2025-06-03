@@ -11,13 +11,14 @@ from rasterio.features import rasterize
 from shapely.geometry import mapping
 from typing import Dict, Optional
 from .mask_generator import BaseMaskGenerator, MaskConfig
+import cv2
 
 logger = logging.getLogger(__name__)
 
 class RoadBinaryMaskGenerator(BaseMaskGenerator):
     def __init__(self, geojson_folder: str, config: Optional[MaskConfig] = None):
         super().__init__(geojson_folder, config)
-        self.output_size = (1300, 1300)
+        self.output_size = (650, 650)
 
     def prepare_mask(self, geojson_path: str, img_id: str) -> np.ndarray:
         gdf = gpd.read_file(geojson_path)
@@ -52,6 +53,9 @@ class RoadBinaryMaskGenerator(BaseMaskGenerator):
             all_touched=True
         )
         
+        if mask.shape != self.output_size:
+            mask = cv2.resize(mask, self.output_size, interpolation=cv2.INTER_NEAREST)
+        
         return np.where(mask > 0, 255, 0)
 
     def _find_tiff_path(self, img_id: str) -> str:
@@ -64,7 +68,7 @@ class RoadBinaryMaskGenerator(BaseMaskGenerator):
 class RoadGraphMaskGenerator(BaseMaskGenerator):
     def __init__(self, geojson_folder: str, config: Optional[MaskConfig] = None):
         super().__init__(geojson_folder, config)
-        self.output_size = (1300, 1300)
+        self.output_size = (650, 650)
 
     def prepare_mask(self, geojson_path: str, img_id: str) -> Dict:
         gdf = gpd.read_file(geojson_path)
@@ -87,7 +91,9 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
             pixel_coords = []
             for x, y in coords:
                 col_img, row_img = ~transform * (x, y)
-                pixel_coords.append((int(col_img), int(row_img)))
+                col_img = int((col_img / size[1]) * self.output_size[1])
+                row_img = int((row_img / size[0]) * self.output_size[0])
+                pixel_coords.append((col_img, row_img))
             
             for i in range(len(pixel_coords) - 1):
                 p1, p2 = pixel_coords[i], pixel_coords[i + 1]
