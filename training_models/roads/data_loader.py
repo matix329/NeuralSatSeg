@@ -25,12 +25,12 @@ class DataLoader:
         mask_paths = tf.convert_to_tensor(mask_paths, dtype=tf.string)
         
         dataset = tf.data.Dataset.from_tensor_slices((image_paths, mask_paths))
-        dataset = dataset.map(self._preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+        dataset = dataset.map(self.preprocess, num_parallel_calls=tf.data.AUTOTUNE)
         dataset = dataset.batch(4).prefetch(tf.data.AUTOTUNE)
         
         return dataset
         
-    def _preprocess(self, image_path, mask_path):
+    def preprocess(self, image_path, mask_path):
         self.logger.info(f"Image path type: {type(image_path)}")
         self.logger.info(f"Mask path type: {type(mask_path)}")
         

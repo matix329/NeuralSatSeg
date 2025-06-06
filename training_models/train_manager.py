@@ -11,6 +11,7 @@ from models_code.roads.metrics import dice_coefficient as roads_dice_coefficient
 from models_code.roads.metrics import iou_score as roads_iou_score
 from models_code.buildings.metrics import dice_coefficient as buildings_dice_coefficient
 from models_code.buildings.metrics import iou_score as buildings_iou_score
+from training_models.buildings.config import REDUCED_DATASET_SIZE
 
 tf.config.set_visible_devices([], 'GPU')
 tf.config.threading.set_inter_op_parallelism_threads(2)
@@ -42,6 +43,11 @@ class ModelTrainer:
         print("2. CNN")
         architecture = int(input("Choose option (1-2): "))
         
+        use_reduced_dataset = False
+        if model_type == 2 and architecture == 1:
+            print("\nUse reduced dataset to match roads size? (y/n):")
+            use_reduced_dataset = input().lower() == 'y'
+        
         if model_type == 1:
             print("\nSelect road mask type:")
             print("1. Binary")
@@ -63,7 +69,8 @@ class ModelTrainer:
             "architecture": "unet" if architecture == 1 else "cnn",
             "mask_type": mask_type,
             "experiment_name": experiment_name,
-            "run_name": run_name
+            "run_name": run_name,
+            "use_reduced_dataset": use_reduced_dataset
         }
 
     def load_model_and_data(self, config):
@@ -88,14 +95,22 @@ class ModelTrainer:
         config = self.get_user_input()
         
         self.logger.info("Starting training process...")
+        if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
+            self.logger.info(f"Using reduced dataset for buildings: {REDUCED_DATASET_SIZE['train']} train / {REDUCED_DATASET_SIZE['val']} val")
+            self.epochs = 20
+        
         mlflow.tensorflow.autolog(disable=True)
         self.mlflow_manager = MLflowManager(config["experiment_name"], "Training run")
         self.mlflow_manager.start_run(run_name=config["run_name"])
         
         model, data_loader = self.load_model_and_data(config)
         
-        train_data = data_loader.load("train")
-        val_data = data_loader.load("val")
+        limit_samples = None
+        if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
+            limit_samples = True
+            
+        train_data = data_loader.load("train", limit_samples=limit_samples)
+        val_data = data_loader.load("val", limit_samples=limit_samples)
         
         metrics = ["accuracy"]
         if config["model_type"] == "roads":
@@ -116,7 +131,8 @@ class ModelTrainer:
             "input_shape": self.input_shape,
             "batch_size": self.batch_size,
             "epochs": self.epochs,
-            "learning_rate": self.learning_rate
+            "learning_rate": self.learning_rate,
+            "use_reduced_dataset": config["use_reduced_dataset"]
         })
         
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
