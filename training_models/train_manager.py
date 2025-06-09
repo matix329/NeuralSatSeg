@@ -5,13 +5,14 @@ import mlflow
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from scripts.color_logger import ColorLogger
-from scripts.mlflow_manager import MLflowManager, parse_args
+from scripts.mlflow_manager import MLflowManager
 from scripts.tensorboard import TensorboardManager
 from models_code.roads.metrics import dice_coefficient as roads_dice_coefficient
 from models_code.roads.metrics import iou_score as roads_iou_score
 from models_code.buildings.metrics import dice_coefficient as buildings_dice_coefficient
 from models_code.buildings.metrics import iou_score as buildings_iou_score
 from training_models.buildings.config import REDUCED_DATASET_SIZE
+from scripts.epoch_logger_callback import EpochLogger
 
 tf.config.set_visible_devices([], 'GPU')
 tf.config.threading.set_inter_op_parallelism_threads(2)
@@ -26,7 +27,7 @@ class ModelTrainer:
         
         self.input_shape = (650, 650, 3)
         self.batch_size = 2
-        self.epochs = 100
+        self.epochs = 20
         self.learning_rate = 0.001
         
         self.mlflow_manager = None
@@ -105,12 +106,12 @@ class ModelTrainer:
         
         model, data_loader = self.load_model_and_data(config)
         
-        limit_samples = None
         if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
-            limit_samples = True
-            
-        train_data = data_loader.load("train", limit_samples=limit_samples)
-        val_data = data_loader.load("val", limit_samples=limit_samples)
+            train_data = data_loader.load("train", limit_samples=True, mask_type=config["mask_type"])
+            val_data = data_loader.load("val", limit_samples=True, mask_type=config["mask_type"])
+        else:
+            train_data = data_loader.load("train", mask_type=config["mask_type"])
+            val_data = data_loader.load("val", mask_type=config["mask_type"])
         
         metrics = ["accuracy"]
         if config["model_type"] == "roads":
@@ -157,7 +158,8 @@ class ModelTrainer:
                 monitor="val_loss",
                 save_best_only=True,
                 verbose=1
-            )
+            ),
+            EpochLogger(log_dir=self.log_dir, run_name=config["run_name"])
         ]
         
         history = model.fit(
@@ -168,6 +170,8 @@ class ModelTrainer:
             validation_steps=validation_steps,
             callbacks=callbacks
         )
+        
+        final_metrics = {metric: history.history[metric][-1] for metric in history.history.keys()}
         
         output_path = os.path.join(self.output_dir, config["model_type"], f"{config['run_name']}.keras")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

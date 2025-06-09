@@ -5,7 +5,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 TRAINING_CONFIG = {
     "input_shape": (650, 650, 3),
     "batch_size": 32,
-    "epochs": 100,
+    "epochs": 20,
     "learning_rate": 0.001
 }
 

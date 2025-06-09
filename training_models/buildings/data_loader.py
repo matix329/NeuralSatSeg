@@ -9,18 +9,20 @@ class DataLoader:
     def __init__(self):
         self.logger = ColorLogger("DataLoader").get_logger()
         self.image_size = (650, 650)
+        self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
         
     def load_image_mask_pairs(self, data_dir: str, mask_type: str, limit_samples: Optional[int] = None) -> Tuple[List[str], List[str]]:
-        if not os.path.exists(data_dir):
-            raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+        full_data_dir = os.path.join(self.project_root, data_dir)
+        if not os.path.exists(full_data_dir):
+            raise FileNotFoundError(f"Data directory does not exist: {full_data_dir}")
             
-        image_paths = sorted([os.path.join(data_dir, "images", f) for f in os.listdir(os.path.join(data_dir, "images")) if f.endswith(".png")])
+        image_paths = sorted([os.path.join(full_data_dir, "images", f) for f in os.listdir(os.path.join(full_data_dir, "images")) if f.endswith(".png")])
         mask_dir = "masks_original" if mask_type == "original" else "masks_eroded"
-        mask_paths = sorted([os.path.join(data_dir, mask_dir, f) for f in os.listdir(os.path.join(data_dir, mask_dir)) 
+        mask_paths = sorted([os.path.join(full_data_dir, mask_dir, f) for f in os.listdir(os.path.join(full_data_dir, mask_dir)) 
                            if f.endswith(".png") or f.endswith(".npy")])
         
         if not image_paths or not mask_paths:
-            raise FileNotFoundError(f"No image-mask pairs found in {data_dir}")
+            raise FileNotFoundError(f"No image-mask pairs found in {full_data_dir}")
             
         if limit_samples is not None:
             split = "train" if "train" in data_dir else "val"
@@ -72,8 +74,9 @@ class DataLoader:
                 tf.float32
             )
             mask = tf.reshape(mask, (*self.image_size, 1))
+            mask = mask / 255.0
             
         return image, mask
         
-    def load(self, split="train", limit_samples: Optional[int] = None):
-        return self.get_tf_dataset(split=split, mask_type="original", batch_size=4, limit_samples=limit_samples) 
+    def load(self, split="train", limit_samples: Optional[int] = None, mask_type="original"):
+        return self.get_tf_dataset(split=split, mask_type=mask_type, batch_size=4, limit_samples=limit_samples) 
