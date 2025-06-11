@@ -5,9 +5,10 @@ from scripts.color_logger import ColorLogger
 class DataLoader:
     def __init__(self):
         self.logger = ColorLogger("DataLoader").get_logger()
+        self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
         
     def load(self, split="train", mask_type="binary"):
-        data_dir = f"data/processed/{split}/roads"
+        data_dir = os.path.join(self.project_root, f"data/processed/{split}/roads")
         if not os.path.exists(data_dir):
             raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
             
@@ -45,7 +46,7 @@ class DataLoader:
             mask = tf.cast(mask, tf.float32) / 255.0
         else:  # graph
             mask = tf.io.read_file(mask_path)
-            mask = tf.image.decode_png(mask, channels=3)  # graph masks are RGB
+            mask = tf.image.decode_png(mask, channels=3)
             mask = tf.cast(mask, tf.float32) / 255.0
         
         return image, mask 
