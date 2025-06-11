@@ -3,8 +3,7 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from scripts.color_logger import ColorLogger
-from models_code.metrics.dice_metrics import dice_coefficient, iou_score
-from models_code.metrics.classification_metrics import precision, recall, f1_score
+from models_code.buildings.metrics import dice_coefficient, iou_score, precision, recall, f1_score
 
 logger = ColorLogger("ModelTester").get_logger()
 
@@ -27,7 +26,7 @@ def load_model(model_path):
 def load_data(image_path):
     image = tf.io.read_file(image_path)
     image = tf.image.decode_image(image, channels=3, expand_animations=False)
-    image = tf.image.resize(image, [512, 512])
+    image = tf.image.resize(image, [650, 650])
     image_np = image.numpy()
     
     category = os.path.basename(os.path.dirname(os.path.dirname(image_path)))
@@ -38,19 +37,22 @@ def load_data(image_path):
     
     if category == "roads":
         mask_path = os.path.join(base_dir, "data", "processed", "val", "roads", "masks_binary", f"{mask_name}.png")
-        mask = tf.io.read_file(mask_path)
-        mask = tf.image.decode_image(mask, channels=1, expand_animations=False)
-        mask = tf.image.resize(mask, [512, 512])
-        return image_np, None, mask.numpy(), image_name
     else:
         mask_path = os.path.join(base_dir, "data", "processed", "val", "buildings", "masks_original", f"{mask_name}.png")
-        mask = tf.io.read_file(mask_path)
-        mask = tf.image.decode_image(mask, channels=1, expand_animations=False)
-        mask = tf.image.resize(mask, [512, 512])
-        return image_np, mask.numpy(), None, image_name
+    
+    mask = tf.io.read_file(mask_path)
+    mask = tf.image.decode_image(mask, channels=1, expand_animations=False)
+    mask = tf.image.resize(mask, [650, 650])
+    return image_np, mask.numpy(), image_name
 
 def process_prediction(prediction):
+    if prediction is None:
+        logger.error("Prediction is None")
+        return None
+        
+    logger.info(f"Prediction type: {type(prediction)}")
     if isinstance(prediction, dict):
+        logger.info(f"Prediction keys: {prediction.keys()}")
         processed = {}
         for key, value in prediction.items():
             value_np = value.numpy() if isinstance(value, tf.Tensor) else value
@@ -60,7 +62,14 @@ def process_prediction(prediction):
                 'binary': (value_2d > 0.5).astype(np.uint8)
             }
         return processed
-    return None
+    else:
+        logger.info(f"Prediction shape: {prediction.shape if hasattr(prediction, 'shape') else 'no shape'}")
+        prediction_np = prediction.numpy() if isinstance(prediction, tf.Tensor) else prediction
+        prediction_2d = prediction_np[0, :, :, 0]
+        return {
+            'raw': prediction_2d,
+            'binary': (prediction_2d > 0.5).astype(np.uint8)
+        }
 
 def calculate_metrics(true_mask, pred_mask):
     true_mask = true_mask.astype(np.float32)
@@ -86,35 +95,28 @@ def calculate_metrics(true_mask, pred_mask):
     }
 
 def visualize_predictions(image, true_mask, pred_dict, image_name, category, metrics):
-    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
     fig.suptitle(f'Prediction Analysis - {image_name} ({category})', fontsize=16)
     
     image = image.astype(np.float32) / 255.0
     
-    classes = ['buildings', 'roads']
-    for idx, class_name in enumerate(classes):
-        pred = pred_dict[f'head_{class_name}']
-        
-        axes[idx, 0].imshow(image)
-        axes[idx, 0].set_title('Input Image')
-        axes[idx, 0].axis('off')
-        
-        if true_mask is not None:
-            axes[idx, 1].imshow(true_mask, cmap='gray')
-            axes[idx, 1].set_title('True Mask')
-            axes[idx, 1].axis('off')
-        
-        im = axes[idx, 2].imshow(pred['raw'], cmap='jet')
-        axes[idx, 2].set_title('Prediction Heatmap')
-        axes[idx, 2].axis('off')
-        plt.colorbar(im, ax=axes[idx, 2])
-        
-        axes[idx, 3].imshow(pred['binary'], cmap='gray')
-        metric_text = f'Binary Mask'
-        if class_name in metrics:
-            metric_text += f' (IoU: {metrics[class_name]["iou"]:.3f}, Dice: {metrics[class_name]["dice"]:.3f})'
-        axes[idx, 3].set_title(metric_text)
-        axes[idx, 3].axis('off')
+    axes[0].imshow(image)
+    axes[0].set_title('Input Image')
+    axes[0].axis('off')
+    
+    axes[1].imshow(true_mask, cmap='gray')
+    axes[1].set_title('True Mask')
+    axes[1].axis('off')
+    
+    im = axes[2].imshow(pred_dict['raw'], cmap='jet')
+    axes[2].set_title('Prediction Heatmap')
+    axes[2].axis('off')
+    plt.colorbar(im, ax=axes[2])
+    
+    axes[3].imshow(pred_dict['binary'], cmap='gray')
+    metric_text = f'Binary Mask (IoU: {metrics["iou"]:.3f}, Dice: {metrics["dice"]:.3f})'
+    axes[3].set_title(metric_text)
+    axes[3].axis('off')
     
     plt.tight_layout()
     
@@ -125,28 +127,26 @@ def visualize_predictions(image, true_mask, pred_dict, image_name, category, met
 
 def process_image(model, image_path):
     try:
-        image, buildings_mask, roads_mask, image_name = load_data(image_path)
+        image, mask, image_name = load_data(image_path)
         category = os.path.basename(os.path.dirname(os.path.dirname(image_path)))
         
         image_norm = image / 255.0
         image_norm = np.expand_dims(image_norm, 0)
-        binary_map = np.zeros_like(image_norm[..., :1])
+        logger.info(f"Input image shape: {image_norm.shape}")
         
-        prediction = model.predict([image_norm, binary_map], verbose=0)
+        prediction = model.predict(image_norm, verbose=0)
+        logger.info(f"Raw prediction type: {type(prediction)}")
         processed_pred = process_prediction(prediction)
         
-        metrics = {}
-        if buildings_mask is not None:
-            metrics['buildings'] = calculate_metrics(buildings_mask, processed_pred['head_buildings']['binary'])
-        if roads_mask is not None:
-            metrics['roads'] = calculate_metrics(roads_mask, processed_pred['head_roads']['binary'])
+        if processed_pred is None:
+            logger.error(f"Failed to process prediction for {image_name}")
+            return None
+            
+        metrics = calculate_metrics(mask, processed_pred['binary'])
         
-        visualize_predictions(image, buildings_mask if buildings_mask is not None else roads_mask, processed_pred, image_name, category, metrics)
+        visualize_predictions(image, mask, processed_pred, image_name, category, metrics)
         
-        if buildings_mask is not None:
-            logger.info(f"Processed {image_name} - Buildings IoU: {metrics['buildings']['iou']:.3f}, Dice: {metrics['buildings']['dice']:.3f}, True pixels: {metrics['buildings']['true_pixels']}, Pred pixels: {metrics['buildings']['pred_pixels']}")
-        if roads_mask is not None:
-            logger.info(f"Processed {image_name} - Roads IoU: {metrics['roads']['iou']:.3f}, Dice: {metrics['roads']['dice']:.3f}, True pixels: {metrics['roads']['true_pixels']}, Pred pixels: {metrics['roads']['pred_pixels']}")
+        logger.info(f"Processed {image_name} - IoU: {metrics['iou']:.3f}, Dice: {metrics['dice']:.3f}, True pixels: {metrics['true_pixels']}, Pred pixels: {metrics['pred_pixels']}")
         return prediction
     except Exception as e:
         logger.error(f"Error processing image {image_path}: {str(e)}")
@@ -158,17 +158,37 @@ def main():
         logger.error(f"Models directory not found: {models_dir}")
         return
 
-    available_models = [f for f in os.listdir(models_dir) if f.endswith('.keras')]
-    if not available_models:
-        logger.error("No models found in the directory.")
+    print("\nSelect category:")
+    print("1. Buildings")
+    print("2. Roads")
+    
+    try:
+        category_choice = int(input("\nEnter category number (1 or 2): "))
+        if category_choice not in [1, 2]:
+            logger.error("Invalid category selection.")
+            return
+    except ValueError:
+        logger.error("Please enter a valid number.")
         return
 
-    print("Available models:")
+    category = "buildings" if category_choice == 1 else "roads"
+    category_dir = os.path.join(models_dir, category)
+    
+    if not os.path.exists(category_dir):
+        logger.error(f"Category directory not found: {category_dir}")
+        return
+
+    available_models = [f for f in os.listdir(category_dir) if f.endswith('.keras')]
+    if not available_models:
+        logger.error(f"No models found in {category_dir}")
+        return
+
+    print(f"\nAvailable {category} models:")
     for i, model_name in enumerate(available_models, 1):
         print(f"{i}. {model_name}")
 
     try:
-        model_index = int(input("Select a model by number: ")) - 1
+        model_index = int(input(f"\nSelect a {category} model by number: ")) - 1
         if model_index < 0 or model_index >= len(available_models):
             logger.error("Invalid model selection.")
             return
@@ -176,24 +196,23 @@ def main():
         logger.error("Please enter a valid number.")
         return
 
-    model_path = os.path.join(models_dir, available_models[model_index])
+    model_path = os.path.join(category_dir, available_models[model_index])
     model = load_model(model_path)
     if model is None:
         return
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "processed", "val")
-    for category in ["roads", "buildings"]:
-        images_dir = os.path.join(data_dir, category, "images")
-        if not os.path.exists(images_dir):
-            logger.error(f"Directory not found: {images_dir}")
-            continue
+    images_dir = os.path.join(data_dir, category, "images")
+    if not os.path.exists(images_dir):
+        logger.error(f"Directory not found: {images_dir}")
+        return
 
-        image_files = [f for f in os.listdir(images_dir) if f.endswith('.png')]
-        logger.info(f"Found {len(image_files)} images in {images_dir}")
+    image_files = [f for f in os.listdir(images_dir) if f.endswith('.png')]
+    logger.info(f"Found {len(image_files)} images in {images_dir}")
 
-        for image_file in image_files:
-            image_path = os.path.join(images_dir, image_file)
-            process_image(model, image_path)
+    for image_file in image_files:
+        image_path = os.path.join(images_dir, image_file)
+        process_image(model, image_path)
 
 if __name__ == "__main__":
     main()
