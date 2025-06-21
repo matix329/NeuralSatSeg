@@ -45,7 +45,7 @@ class ModelTrainer:
         architecture = int(input("Choose option (1-2): "))
         
         use_reduced_dataset = False
-        if model_type == 2 and architecture == 1:
+        if model_type == 2:
             print("\nUse reduced dataset to match roads size? (y/n):")
             use_reduced_dataset = input().lower() == 'y'
         
@@ -96,16 +96,26 @@ class ModelTrainer:
         config = self.get_user_input()
         
         self.logger.info("Starting training process...")
-        if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
+        if config["model_type"] == "buildings" and config["architecture"] == "cnn":
+            self.logger.info(f"Using reduced dataset for buildings (CNN): {REDUCED_DATASET_SIZE['train']} train / {REDUCED_DATASET_SIZE['val']} val")
+            self.batch_size = 4
+            train_data = None
+            val_data = None
+        elif config["model_type"] == "buildings" and config["use_reduced_dataset"]:
             self.logger.info(f"Using reduced dataset for buildings: {REDUCED_DATASET_SIZE['train']} train / {REDUCED_DATASET_SIZE['val']} val")
             self.epochs = 20
+            train_data = None
+            val_data = None
+        else:
+            train_data = None
+            val_data = None
         
         mlflow.tensorflow.autolog(disable=True)
         self.mlflow_manager = MLflowManager(config["experiment_name"], "Training run")
         self.mlflow_manager.start_run(run_name=config["run_name"])
         
         model, data_loader = self.load_model_and_data(config)
-        
+
         if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
             train_data = data_loader.load("train", limit_samples=True, mask_type=config["mask_type"])
             val_data = data_loader.load("val", limit_samples=True, mask_type=config["mask_type"])
