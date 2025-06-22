@@ -8,7 +8,7 @@ from training_models.buildings.config import REDUCED_DATASET_SIZE
 class DataLoader:
     def __init__(self):
         self.logger = ColorLogger("DataLoader").get_logger()
-        self.image_size = (650, 650)
+        self.image_size = (640, 640)
         self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
         
     def load_image_mask_pairs(self, data_dir: str, mask_type: str, limit_samples: Optional[int] = None) -> Tuple[List[str], List[str]]:
@@ -62,11 +62,13 @@ class DataLoader:
         image = tf.io.read_file(image_path)
         image = tf.image.decode_png(image, channels=3)
         image = tf.cast(image, tf.float32) / 255.0
+        image = tf.image.resize(image, self.image_size, method=tf.image.ResizeMethod.BILINEAR)
         
         if mask_type == "original":
             mask = tf.io.read_file(mask_path)
             mask = tf.image.decode_png(mask, channels=1)
             mask = tf.cast(mask, tf.float32) / 255.0
+            mask = tf.image.resize(mask, self.image_size, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         else:
             mask = tf.numpy_function(
                 lambda x: np.load(x.decode('utf-8')).astype(np.float32),

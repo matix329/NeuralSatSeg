@@ -23,10 +23,34 @@ def load_model(model_path):
         logger.error(f"Error loading model: {e}")
         return None
 
-def load_data(image_path):
+def get_model_input_size(model):
+    try:
+        input_shape = model.input_shape
+        logger.info(f"Model input shape: {input_shape}")
+        
+        if isinstance(input_shape, list):
+            input_shape = input_shape[0]
+        
+        if input_shape is None:
+            logger.warning("Model input shape is None, using default 650x650")
+            return 650, 650
+            
+        if len(input_shape) >= 3:
+            height, width = input_shape[1], input_shape[2]
+            logger.info(f"Detected model input size: {width}x{height}")
+            return height, width
+        else:
+            logger.warning(f"Unexpected input shape format: {input_shape}, using default 650x650")
+            return 650, 650
+    except Exception as e:
+        logger.error(f"Error getting model input size: {e}")
+        return 650, 650
+
+def load_data(image_path, model):
+    input_size = get_model_input_size(model)
     image = tf.io.read_file(image_path)
     image = tf.image.decode_image(image, channels=3, expand_animations=False)
-    image = tf.image.resize(image, [650, 650])
+    image = tf.image.resize(image, input_size)
     image_np = image.numpy()
     
     category = os.path.basename(os.path.dirname(os.path.dirname(image_path)))
@@ -42,7 +66,7 @@ def load_data(image_path):
     
     mask = tf.io.read_file(mask_path)
     mask = tf.image.decode_image(mask, channels=1, expand_animations=False)
-    mask = tf.image.resize(mask, [650, 650])
+    mask = tf.image.resize(mask, input_size)
     return image_np, mask.numpy(), image_name
 
 def process_prediction(prediction):
@@ -127,7 +151,7 @@ def visualize_predictions(image, true_mask, pred_dict, image_name, category, met
 
 def process_image(model, image_path):
     try:
-        image, mask, image_name = load_data(image_path)
+        image, mask, image_name = load_data(image_path, model)
         category = os.path.basename(os.path.dirname(os.path.dirname(image_path)))
         
         image_norm = image / 255.0

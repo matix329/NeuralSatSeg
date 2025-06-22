@@ -24,20 +24,26 @@ class ModelTrainer:
         self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         self.output_dir = os.path.join(self.project_root, "output/mlflow_artifacts/models")
         self.log_dir = os.path.join(self.project_root, "logs")
-        
-        self.input_shape = (650, 650, 3)
-        self.batch_size = 2
-        self.epochs = 20
-        self.learning_rate = 0.001
-        
         self.mlflow_manager = None
         self.tensorboard_manager = TensorboardManager(log_dir=self.log_dir)
+        self.input_shape = None
+        self.batch_size = None
+        self.epochs = None
+        self.learning_rate = None
 
     def get_user_input(self):
         print("\nSelect model type to train:")
         print("1. Roads")
         print("2. Buildings")
         model_type = int(input("Choose option (1-2): "))
+        if model_type == 1:
+            from training_models.roads.config import TRAINING_CONFIG as SELECTED_CONFIG
+        else:
+            from training_models.buildings.config import TRAINING_CONFIG as SELECTED_CONFIG
+        self.input_shape = SELECTED_CONFIG["input_shape"]
+        self.batch_size = SELECTED_CONFIG["batch_size"]
+        self.epochs = SELECTED_CONFIG["epochs"]
+        self.learning_rate = SELECTED_CONFIG["learning_rate"]
         
         print("\nSelect model architecture:")
         print("1. UNet (default)")
