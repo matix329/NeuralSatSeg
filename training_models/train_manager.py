@@ -30,6 +30,7 @@ class ModelTrainer:
         self.batch_size = None
         self.epochs = None
         self.learning_rate = None
+        self.training_config = None
 
     def get_user_input(self):
         print("\nSelect model type to train:")
@@ -44,6 +45,7 @@ class ModelTrainer:
         self.batch_size = SELECTED_CONFIG["batch_size"]
         self.epochs = SELECTED_CONFIG["epochs"]
         self.learning_rate = SELECTED_CONFIG["learning_rate"]
+        self.training_config = SELECTED_CONFIG
         
         print("\nSelect model architecture:")
         print("1. UNet (default)")
@@ -157,18 +159,6 @@ class ModelTrainer:
         
         callbacks = [
             self.tensorboard_manager.get_callback(experiment_name=config["experiment_name"]),
-            tf.keras.callbacks.ReduceLROnPlateau(
-                monitor="val_loss",
-                factor=0.1,
-                patience=5,
-                verbose=1
-            ),
-            tf.keras.callbacks.EarlyStopping(
-                monitor="val_loss",
-                patience=10,
-                verbose=1,
-                restore_best_weights=True
-            ),
             tf.keras.callbacks.ModelCheckpoint(
                 filepath=os.path.join(self.output_dir, config["model_type"], f"best_{config['run_name']}.keras"),
                 monitor="val_loss",
@@ -177,6 +167,26 @@ class ModelTrainer:
             ),
             EpochLogger(log_dir=self.log_dir, run_name=config["run_name"])
         ]
+        
+        if self.training_config.get("reduce_lr_on_plateau", False):
+            callbacks.append(
+                tf.keras.callbacks.ReduceLROnPlateau(
+                    monitor="val_loss",
+                    factor=0.1,
+                    patience=5,
+                    verbose=1
+                )
+            )
+        
+        if self.training_config.get("early_stopping", False):
+            callbacks.append(
+                tf.keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    patience=10,
+                    verbose=1,
+                    restore_best_weights=True
+                )
+            )
         
         history = model.fit(
             train_data.repeat(),

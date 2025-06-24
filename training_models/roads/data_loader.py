@@ -46,10 +46,12 @@ class DataLoader:
         image = tf.io.read_file(image_path)
         image = tf.image.decode_png(image, channels=3)
         image = tf.cast(image, tf.float32) / 255.0
+        image = tf.image.crop_to_bounding_box(image, 0, 0, 640, 640)
         
         mask = tf.io.read_file(mask_path)
         mask = tf.image.decode_png(mask, channels=1)
         mask = tf.cast(mask, tf.float32) / 255.0
+        mask = tf.image.crop_to_bounding_box(mask, 0, 0, 640, 640)
         
         return image, mask
         
