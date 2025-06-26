@@ -90,11 +90,15 @@ class ModelTrainer:
         model_factory = __import__(model_path, fromlist=["ModelFactory"])
         data_loader = __import__(data_loader_path, fromlist=["DataLoader"])
         mask_loader = __import__(mask_loader_path, fromlist=["MaskLoader"])
-        
-        model = model_factory.ModelFactory.create_model(
-            architecture=config["architecture"],
-            mask_type=config["mask_type"]
-        )
+
+        if config["model_type"] == "roads" and config["architecture"] == "cnn":
+            from models_code.roads.cnn import create_cnn
+            model = create_cnn(callbacks=True)
+        else:
+            model = model_factory.ModelFactory.create_model(
+                architecture=config["architecture"],
+                mask_type=config["mask_type"]
+            )
         
         data_loader = data_loader.DataLoader()
         
@@ -122,8 +126,12 @@ class ModelTrainer:
         self.mlflow_manager = MLflowManager(config["experiment_name"], "Training run")
         self.mlflow_manager.start_run(run_name=config["run_name"])
         
-        model, data_loader = self.load_model_and_data(config)
-
+        model_obj, data_loader = self.load_model_and_data(config)
+        model = model_obj
+        default_callbacks = []
+        if config["model_type"] == "roads" and config["architecture"] == "cnn" and isinstance(model_obj, tuple):
+            model, default_callbacks = model_obj
+        
         if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
             train_data = data_loader.load("train", limit_samples=True, mask_type=config["mask_type"])
             val_data = data_loader.load("val", limit_samples=True, mask_type=config["mask_type"])
@@ -137,11 +145,12 @@ class ModelTrainer:
         else:
             metrics.extend([buildings_dice_coefficient, buildings_iou_score])
         
-        model.compile(
-            optimizer=Adam(learning_rate=self.learning_rate),
-            loss="binary_crossentropy",
-            metrics=metrics
-        )
+        if not (config["model_type"] == "roads" and config["architecture"] == "cnn" and isinstance(model_obj, tuple)):
+            model.compile(
+                optimizer=Adam(learning_rate=self.learning_rate),
+                loss="binary_crossentropy",
+                metrics=metrics
+            )
         
         self.mlflow_manager.log_params({
             "model_type": config["model_type"],
@@ -187,6 +196,9 @@ class ModelTrainer:
                     restore_best_weights=True
                 )
             )
+        
+        if config["model_type"] == "roads" and config["architecture"] == "cnn" and default_callbacks:
+            callbacks = default_callbacks + callbacks
         
         history = model.fit(
             train_data.repeat(),

@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
-
+from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
+from models_code.roads.metrics import dice_coefficient, iou_score, dice_loss
 
 def conv_block(x, filters):
     x = layers.Conv2D(filters, 3, padding='same')(x)
@@ -16,13 +17,25 @@ def conv_block(x, filters):
 def crop_to_match(skip, up):
     def crop(inputs):
         skip, up = inputs
-        sh, sw = tf.shape(skip)[1], tf.shape(skip)[2]
-        uh, uw = tf.shape(up)[1], tf.shape(up)[2]
-        return skip[:, :uh, :uw, :]
-    return layers.Lambda(crop)([skip, up])
+        sh = tf.shape(skip)[1]
+        sw = tf.shape(skip)[2]
+        uh = tf.shape(up)[1]
+        uw = tf.shape(up)[2]
+        crop_h = sh - uh
+        crop_w = sw - uw
+        crop_h = tf.maximum(crop_h, 0)
+        crop_w = tf.maximum(crop_w, 0)
+        cropped = skip[:, :sh-crop_h, :sw-crop_w, :]
+        return cropped[:, :uh, :uw, :]
+    return layers.Lambda(crop, output_shape=lambda s: s[1])([skip, up])
 
 
-def create_road_detection_cnn(input_shape=(640, 640, 3), num_classes=1):
+def combined_loss(y_true, y_pred):
+    bce = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+    dsc = dice_loss(y_true, y_pred)
+    return bce + dsc
+
+def create_road_detection_cnn(input_shape=(640, 640, 3), num_classes=1, compile_model=True, callbacks=False):
     inputs = layers.Input(input_shape)
 
     c1 = conv_block(inputs, 32)
@@ -66,6 +79,19 @@ def create_road_detection_cnn(input_shape=(640, 640, 3), num_classes=1):
     outputs = layers.Conv2D(num_classes, 1, activation='sigmoid')(c8)
 
     model = Model(inputs, outputs)
+
+    if compile_model:
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+            loss=combined_loss,
+            metrics=[dice_coefficient, iou_score, tf.keras.metrics.BinaryAccuracy()]
+        )
+    if callbacks:
+        cb = [
+            ReduceLROnPlateau(monitor='val_dice_coefficient', factor=0.5, patience=4, min_lr=1e-6, mode='max', verbose=1),
+            EarlyStopping(monitor='val_dice_coefficient', patience=10, mode='max', restore_best_weights=True, verbose=1)
+        ]
+        return model, cb
     return model
 
 create_cnn = create_road_detection_cnn

@@ -9,6 +9,6 @@ class ModelFactory:
                 return create_unet_graph()
             return create_unet()
         elif architecture == "cnn":
-            return create_cnn()
+            return create_cnn(callbacks=False)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
