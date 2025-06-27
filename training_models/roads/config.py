@@ -4,9 +4,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 TRAINING_CONFIG = {
     "input_shape": (640, 640, 3),
-    "batch_size": 4,
+    "batch_size": 8,
     "epochs": 80,
-    "learning_rate": 0.0003
+    "learning_rate": 0.0001
 }
 
 MASK_OPTIONS = ["binary", "graph"]
