@@ -9,10 +9,11 @@ import shutil
 from pathlib import Path
 from PIL import Image
 
-from data_preparation.image_processing.image_loading import ImageLoader
-from data_preparation.mask_processing.roads_masks import RoadBinaryMaskGenerator, RoadGraphMaskGenerator
-from data_preparation.splitter.splitter import Splitter
-from data_preparation.image_filtering.image_filtering import ImageFilter
+from image_processing.image_loading import ImageLoader
+from mask_processing.roads_masks import RoadBinaryMaskGenerator, RoadGraphMaskGenerator
+from splitter.splitter import Splitter
+from image_filtering.image_filtering import ImageFilter
+from mask_processing.mask_generator import MaskConfig
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -64,8 +65,18 @@ class RoadsDataPreparator:
             return
             
         loader = ImageLoader(self.source_folder, category='roads', batch_size=self.batch_size)
-        binary_mask_generator = RoadBinaryMaskGenerator(geojson_folder=self.geojson_folder)
-        graph_mask_generator = RoadGraphMaskGenerator(geojson_folder=self.geojson_folder)
+        
+        mask_config = MaskConfig(
+            min_pixels=100,
+            line_width=8,
+            erosion_kernel_size=3,
+            erosion_iterations=1,
+            save_debug_mask=False,
+            min_coverage_percent=0.5
+        )
+        
+        binary_mask_generator = RoadBinaryMaskGenerator(geojson_folder=self.geojson_folder, config=mask_config)
+        graph_mask_generator = RoadGraphMaskGenerator(geojson_folder=self.geojson_folder, config=mask_config)
         
         total_processed = 0
         total_errors = 0
@@ -147,7 +158,12 @@ class RoadsDataPreparator:
             is_mask = "masks" in str(path)
             
             if is_mask:
-                if np.max(image) == 1:
+                if image.dtype == np.float32 or image.dtype == np.float64:
+                    if np.max(image) <= 1.0:
+                        image = (image * 255).astype(np.uint8)
+                    else:
+                        image = image.astype(np.uint8)
+                elif np.max(image) == 1:
                     image = (image * 255).astype(np.uint8)
                 elif np.max(image) == 255:
                     image = image.astype(np.uint8)

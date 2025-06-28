@@ -14,6 +14,8 @@ class MaskConfig:
     line_width: int = 5
     erosion_kernel_size: int = 3
     erosion_iterations: int = 1
+    save_debug_mask: bool = False
+    min_coverage_percent: float = 0.5
 
 class BaseMaskGenerator(ABC):
     def __init__(self, geojson_folder: str, config: Optional[MaskConfig] = None):
@@ -40,9 +42,18 @@ class BaseMaskGenerator(ABC):
         pass
 
     def validate_mask(self, mask: np.ndarray) -> bool:
-        if np.sum(mask > 0) < self.config.min_pixels:
-            logger.warning(f"Mask has less than {self.config.min_pixels} non-zero pixels")
+        road_pixels = np.sum(mask > 0)
+        total_pixels = mask.shape[0] * mask.shape[1]
+        coverage_percent = (road_pixels / total_pixels) * 100
+        
+        if road_pixels < self.config.min_pixels:
+            logger.warning(f"Mask has less than {self.config.min_pixels} non-zero pixels ({road_pixels})")
             return False
+            
+        if coverage_percent < self.config.min_coverage_percent:
+            logger.warning(f"Mask coverage {coverage_percent:.2f}% is below minimum {self.config.min_coverage_percent}%")
+            return False
+            
         return True
 
     def generate_mask(self, geojson_path: str, img_id: str, output_path: str) -> Optional[str]:
