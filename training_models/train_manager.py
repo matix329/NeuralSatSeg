@@ -91,14 +91,12 @@ class ModelTrainer:
         data_loader = __import__(data_loader_path, fromlist=["DataLoader"])
         mask_loader = __import__(mask_loader_path, fromlist=["MaskLoader"])
 
-        if config["model_type"] == "roads" and config["architecture"] == "cnn":
-            from models_code.roads.cnn import create_cnn
-            model = create_cnn(callbacks=True)
-        else:
-            model = model_factory.ModelFactory.create_model(
-                architecture=config["architecture"],
-                mask_type=config["mask_type"]
-            )
+        callbacks = config["model_type"] == "roads" and config["architecture"] == "cnn"
+        model = model_factory.ModelFactory.create_model(
+            architecture=config["architecture"],
+            mask_type=config["mask_type"],
+            callbacks=callbacks
+        )
         
         data_loader = data_loader.DataLoader()
         
