@@ -42,4 +42,19 @@ def recall(y_true, y_pred):
 def f1_score(y_true, y_pred):
     prec = precision(y_true, y_pred)
     rec = recall(y_true, y_pred)
-    return 2 * (prec * rec) / (prec + rec + K.epsilon()) 
+    return 2 * (prec * rec) / (prec + rec + K.epsilon())
+
+def focal_loss(y_true, y_pred, alpha=0.25, gamma=2.0):
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(y_pred, tf.float32)
+    epsilon = K.epsilon()
+    y_pred = K.clip(y_pred, epsilon, 1. - epsilon)
+    cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+    weight = alpha * K.pow(1 - y_pred, gamma) * y_true + (1 - alpha) * K.pow(y_pred, gamma) * (1 - y_true)
+    loss = weight * cross_entropy
+    return K.mean(loss)
+
+def combined_loss(y_true, y_pred):
+    bce = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+    dsc = dice_loss(y_true, y_pred)
+    return bce + dsc 

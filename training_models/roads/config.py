@@ -6,7 +6,9 @@ TRAINING_CONFIG = {
     "input_shape": (640, 640, 3),
     "batch_size": 8,
     "epochs": 50,
-    "learning_rate": 0.0001
+    "learning_rate": 0.0001,
+    "loss": "bce_dice",
+    "use_skip_connections": False
 }
 
 MASK_OPTIONS = ["binary", "graph"]

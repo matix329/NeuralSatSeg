@@ -38,9 +38,44 @@ class DataLoader:
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_binary(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
         else:
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_graph(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
+        
+        if split == "train":
+            dataset = dataset.map(self.augment_data, num_parallel_calls=tf.data.AUTOTUNE)
             
         dataset = dataset.batch(4).prefetch(tf.data.AUTOTUNE)
         return dataset
+    
+    def augment_data(self, image, mask):
+        if tf.random.uniform([]) > 0.5:
+            image = tf.image.flip_left_right(image)
+            mask = tf.image.flip_left_right(mask)
+        
+        if tf.random.uniform([]) > 0.5:
+            image = tf.image.flip_up_down(image)
+            mask = tf.image.flip_up_down(mask)
+        
+        if tf.random.uniform([]) > 0.5:
+            angle = tf.random.uniform([], -0.1, 0.1)
+            image = tf.image.rot90(image, k=tf.cast(angle * 4 / 3.14159, tf.int32))
+            mask = tf.image.rot90(mask, k=tf.cast(angle * 4 / 3.14159, tf.int32))
+        
+        if tf.random.uniform([]) > 0.5:
+            scale = tf.random.uniform([], 0.9, 1.1)
+            new_size = tf.cast(tf.cast(tf.shape(image)[:2], tf.float32) * scale, tf.int32)
+            image = tf.image.resize(image, new_size)
+            mask = tf.image.resize(mask, new_size)
+            image = tf.image.resize_with_crop_or_pad(image, 640, 640)
+            mask = tf.image.resize_with_crop_or_pad(mask, 640, 640)
+        
+        if tf.random.uniform([]) > 0.5:
+            delta = tf.random.uniform([], -0.1, 0.1)
+            image = tf.image.adjust_brightness(image, delta)
+        
+        if tf.random.uniform([]) > 0.5:
+            factor = tf.random.uniform([], 0.9, 1.1)
+            image = tf.image.adjust_contrast(image, factor)
+        
+        return image, mask
         
     def preprocess_binary(self, image_path, mask_path):
         image = tf.io.read_file(image_path)

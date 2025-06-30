@@ -158,7 +158,9 @@ class ModelTrainer:
             "batch_size": self.batch_size,
             "epochs": self.epochs,
             "learning_rate": self.learning_rate,
-            "use_reduced_dataset": config["use_reduced_dataset"]
+            "use_reduced_dataset": config["use_reduced_dataset"],
+            "loss": self.training_config.get("loss", "bce_dice"),
+            "use_skip_connections": self.training_config.get("use_skip_connections", False)
         })
         
         steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
