@@ -63,6 +63,20 @@ class ModelTrainer:
             print("2. Graph")
             mask_type = int(input("Choose option (1-2): "))
             mask_type = "binary" if mask_type == 1 else "graph"
+            print("\nSelect city:")
+            print("1. Paris")
+            print("2. Vegas")
+            print("3. Shanghai")
+            print("4. All")
+            city_option = int(input("Choose city (1-4): "))
+            if city_option == 1:
+                city = "Paris"
+            elif city_option == 2:
+                city = "Vegas"
+            elif city_option == 3:
+                city = "Shanghai"
+            else:
+                city = None  # None oznacza wszystkie miasta
         else:
             print("\nSelect building mask type:")
             print("1. Original")
@@ -79,7 +93,8 @@ class ModelTrainer:
             "mask_type": mask_type,
             "experiment_name": experiment_name,
             "run_name": run_name,
-            "use_reduced_dataset": use_reduced_dataset
+            "use_reduced_dataset": use_reduced_dataset,
+            **({"city": city} if model_type == 1 else {})
         }
 
     def load_model_and_data(self, config):
@@ -133,6 +148,9 @@ class ModelTrainer:
         if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
             train_data = data_loader.load("train", limit_samples=True, mask_type=config["mask_type"])
             val_data = data_loader.load("val", limit_samples=True, mask_type=config["mask_type"])
+        elif config["model_type"] == "roads":
+            train_data = data_loader.load("train", mask_type=config["mask_type"], city=config["city"])
+            val_data = data_loader.load("val", mask_type=config["mask_type"], city=config["city"])
         else:
             train_data = data_loader.load("train", mask_type=config["mask_type"])
             val_data = data_loader.load("val", mask_type=config["mask_type"])
