@@ -8,10 +8,10 @@ import gc
 import shutil
 from pathlib import Path
 
-from modules.image_processing.image_loading import ImageLoader
-from modules.mask_processing.mask_generator import BuildingMaskGenerator
-from modules.splitter.splitter import Splitter
-from modules.image_filtering.image_filtering import ImageFilter
+from image_processing.image_loading import ImageLoader
+from mask_processing.buildings_masks import BuildingMaskGenerator
+from splitter.splitter import Splitter
+from image_filtering.image_filtering import ImageFilter
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

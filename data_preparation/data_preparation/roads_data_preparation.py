@@ -7,17 +7,19 @@ import re
 import gc
 import shutil
 from pathlib import Path
+from PIL import Image
 
-from modules.image_processing.image_loading import ImageLoader
-from modules.mask_processing.mask_generator import RoadMaskGenerator, RoadGraphMaskGenerator
-from modules.splitter.splitter import Splitter
-from modules.image_filtering.image_filtering import ImageFilter
+from image_processing.image_loading import ImageLoader
+from mask_processing.roads_masks import RoadBinaryMaskGenerator, RoadGraphMaskGenerator
+from splitter.splitter import Splitter
+from image_filtering.image_filtering import ImageFilter
+from mask_processing.mask_generator import MaskConfig
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class RoadsDataPreparator:
-    def __init__(self, base_dir, city_name, processed, image_size=(1300, 1300), test_size=0.2, seed=42, batch_size=1,
+    def __init__(self, base_dir, city_name, processed, image_size=(650, 650), test_size=0.2, seed=42, batch_size=1,
                  black_threshold=0.0, min_content_ratio=1.0, brightness_factor=1.5, saturation_factor=1.3):
         self.base_dir = Path(base_dir)
         self.city_name = city_name
@@ -63,8 +65,18 @@ class RoadsDataPreparator:
             return
             
         loader = ImageLoader(self.source_folder, category='roads', batch_size=self.batch_size)
-        binary_mask_generator = RoadMaskGenerator(geojson_folder=self.geojson_folder, line_width=1)
-        graph_mask_generator = RoadGraphMaskGenerator(geojson_folder=self.geojson_folder)
+        
+        mask_config = MaskConfig(
+            min_pixels=100,
+            line_width=8,
+            erosion_kernel_size=3,
+            erosion_iterations=1,
+            save_debug_mask=False,
+            min_coverage_percent=0.5
+        )
+        
+        binary_mask_generator = RoadBinaryMaskGenerator(geojson_folder=self.geojson_folder, config=mask_config)
+        graph_mask_generator = RoadGraphMaskGenerator(geojson_folder=self.geojson_folder, config=mask_config)
         
         total_processed = 0
         total_errors = 0
@@ -125,14 +137,33 @@ class RoadsDataPreparator:
             gc.collect()
         logger.info(f"Processing completed. Successfully processed: {total_processed}, Errors: {total_errors}")
 
+    def resize_image(self, image: np.ndarray, is_mask: bool = False) -> np.ndarray:
+        if image.shape[:2] == self.image_size:
+            return image
+            
+        if is_mask:
+            interpolation = cv2.INTER_NEAREST
+        else:
+            interpolation = cv2.INTER_LINEAR
+            
+        return cv2.resize(image, self.image_size, interpolation=interpolation)
+
     def save_image(self, image: np.ndarray, path: Path):
         try:
             image = image.copy()
             if np.all(image == 0):
                 logger.warning(f"Image to save is empty (all zeros): {path}")
                 return False
-            if "masks" in str(path):
-                if np.max(image) == 1:
+                
+            is_mask = "masks" in str(path)
+            
+            if is_mask:
+                if image.dtype == np.float32 or image.dtype == np.float64:
+                    if np.max(image) <= 1.0:
+                        image = (image * 255).astype(np.uint8)
+                    else:
+                        image = image.astype(np.uint8)
+                elif np.max(image) == 1:
                     image = (image * 255).astype(np.uint8)
                 elif np.max(image) == 255:
                     image = image.astype(np.uint8)
@@ -155,23 +186,30 @@ class RoadsDataPreparator:
                     img_hsv[..., 1] = np.clip(img_hsv[..., 1] * self.saturation_factor, 0, 255)
                     img_hsv = img_hsv.astype(np.uint8)
                     image = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2RGB)
+                    
             if len(image.shape) == 3 and image.shape[0] > 3:
-                if "masks" in str(path):
+                if is_mask:
                     image = image[0]
                 else:
                     image = image[-3:]
+                    
             if len(image.shape) == 3:
                 image = np.transpose(image, (1, 2, 0))
             if len(image.shape) == 2:
                 image = np.expand_dims(image, axis=-1)
+                
+            image = self.resize_image(image, is_mask)
+            
             if np.all(image == 0):
                 logger.warning(f"Image to save is empty after processing: {path}")
                 return False
+                
             path.parent.mkdir(parents=True, exist_ok=True)
             result = cv2.imwrite(str(path), image)
             if not result:
                 logger.error(f"cv2.imwrite returned False, image not saved: {path}")
                 return False
+                
             logger.info(f"Image saved successfully: {path}")
             gc.collect()
             return True
