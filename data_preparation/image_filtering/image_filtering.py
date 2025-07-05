@@ -4,6 +4,7 @@ import numpy as np
 import logging
 from typing import List, Tuple, Dict
 import re
+import rasterio
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ class ImageFilter:
         self.min_content_ratio = min_content_ratio
 
         self.roads_image_dir = os.path.join(processed_dir, "temp/roads/images")
-        self.roads_mask_dir = os.path.join(processed_dir, "temp/roads/masks")
+        self.roads_mask_dir = os.path.join(processed_dir, "temp/roads/masks_binary")
         self.buildings_image_dir = os.path.join(processed_dir, "temp/buildings/images")
         self.buildings_mask_dir = os.path.join(processed_dir, "temp/buildings/masks")
         self.buildings_mask_original_dir = os.path.join(processed_dir, "temp/buildings/masks_original")
@@ -29,9 +30,19 @@ class ImageFilter:
 
     def analyze_image(self, image_path: str) -> Tuple[bool, Dict]:
         try:
-            image = cv2.imread(image_path)
-            if image is None:
-                return False, {"error": "Failed to load image"}
+            if image_path.endswith('.tif'):
+                with rasterio.open(image_path) as src:
+                    image = src.read()
+                    if image.shape[0] == 3:
+                        image = np.moveaxis(image, 0, -1)
+                    else:
+                        image = image[0]
+                    if image.dtype == np.uint16:
+                        image = (image / 65535.0 * 255).astype(np.uint8)
+            else:
+                image = cv2.imread(image_path)
+                if image is None:
+                    return False, {"error": "Failed to load image"}
 
             if len(image.shape) == 3:
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -80,7 +91,7 @@ class ImageFilter:
                 continue
 
             for img_name in os.listdir(image_dir):
-                if not img_name.endswith('.png'):
+                if not (img_name.endswith('.png') or img_name.endswith('.tif')):
                     continue
 
                 img_path = os.path.join(image_dir, img_name)
@@ -101,7 +112,7 @@ class ImageFilter:
                             img_num = match.group(1)
                             found_mask = None
                             for mask_file in os.listdir(mask_dir):
-                                if img_num in mask_file and mask_file.endswith('.png'):
+                                if img_num in mask_file and (mask_file.endswith('.png') or mask_file.endswith('.tif')):
                                     found_mask = mask_file
                                     break
                             if found_mask:
@@ -109,7 +120,7 @@ class ImageFilter:
                                 os.remove(mask_path)
                                 if "buildings" in mask_dir:
                                     mask_original_path = os.path.join(self.buildings_mask_original_dir, found_mask)
-                                    mask_eroded_path = os.path.join(self.buildings_mask_eroded_dir, found_mask.replace('.png', '.npy'))
+                                    mask_eroded_path = os.path.join(self.buildings_mask_eroded_dir, found_mask.replace('.png', '.npy').replace('.tif', '.npy'))
                                     if os.path.exists(mask_original_path):
                                         os.remove(mask_original_path)
                                     if os.path.exists(mask_eroded_path):

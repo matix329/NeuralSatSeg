@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class RoadBinaryMaskGenerator(BaseMaskGenerator):
     def __init__(self, geojson_folder: str, config: Optional[MaskConfig] = None):
         super().__init__(geojson_folder, config)
-        self.output_size = (650, 650)
+        self.output_size = (1300, 1300)
 
     def prepare_mask(self, geojson_path: str, img_id: str) -> Optional[np.ndarray]:
         try:
@@ -96,25 +96,24 @@ class RoadBinaryMaskGenerator(BaseMaskGenerator):
 
     def save_debug_mask(self, mask: np.ndarray, geojson_path: str, img_id: str):
         try:
+            import rasterio
             debug_dir = os.path.join(os.path.dirname(geojson_path), "debug_masks")
             os.makedirs(debug_dir, exist_ok=True)
-            
-            filename = os.path.basename(geojson_path).replace('.geojson', '_mask.png')
+            filename = os.path.basename(geojson_path).replace('.geojson', '_mask.tif')
             debug_path = os.path.join(debug_dir, filename)
-            
-            road_pixels = np.sum(mask > 0)
-            total_pixels = mask.shape[0] * mask.shape[1]
-            coverage_percent = (road_pixels / total_pixels) * 100
-            
-            plt.figure(figsize=(10, 8))
-            plt.imshow(mask, cmap='gray')
-            plt.title(f'Road Mask - {img_id}\nCoverage: {coverage_percent:.2f}% ({road_pixels} pixels)')
-            plt.colorbar()
-            plt.savefig(debug_path, dpi=150, bbox_inches='tight')
-            plt.close()
-            
+            transform, crs, _ = self.get_tiff_parameters(img_id)
+            with rasterio.open(
+                debug_path, 'w',
+                driver='GTiff',
+                height=mask.shape[0],
+                width=mask.shape[1],
+                count=1,
+                dtype=mask.dtype,
+                crs=crs,
+                transform=transform
+            ) as dst:
+                dst.write(mask, 1)
             logger.info(f"Debug mask saved to {debug_path}")
-            
         except Exception as e:
             logger.warning(f"Failed to save debug mask: {str(e)}")
 

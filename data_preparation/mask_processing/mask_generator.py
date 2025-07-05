@@ -21,7 +21,7 @@ class BaseMaskGenerator(ABC):
     def __init__(self, geojson_folder: str, config: Optional[MaskConfig] = None):
         self.geojson_folder = geojson_folder
         self.config = config or MaskConfig()
-        self.output_size = (650, 650)
+        self.output_size = (1300, 1300)
 
     def get_tiff_parameters(self, img_id: str) -> Tuple[rasterio.transform.Affine, str, Tuple[int, int]]:
         tiff_path = None
