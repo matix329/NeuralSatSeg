@@ -1,4 +1,5 @@
 import os
+import json
 import numpy as np
 import mlflow.tensorflow
 import mlflow
@@ -13,10 +14,12 @@ from models_code.buildings.metrics import dice_coefficient as buildings_dice_coe
 from models_code.buildings.metrics import iou_score as buildings_iou_score
 from training_models.buildings.config import REDUCED_DATASET_SIZE
 from scripts.epoch_logger_callback import EpochLogger
+from scripts.mlflow_metrics_callback import MLflowMetricsCallback
 
 tf.config.set_visible_devices([], 'GPU')
-tf.config.threading.set_inter_op_parallelism_threads(2)
-tf.config.threading.set_intra_op_parallelism_threads(2)
+tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.experimental.set_memory_growth(tf.config.list_physical_devices('GPU')[0], True) if tf.config.list_physical_devices('GPU') else None
 
 class ModelTrainer:
     def __init__(self):
@@ -38,14 +41,17 @@ class ModelTrainer:
         print("2. Buildings")
         model_type = int(input("Choose option (1-2): "))
         if model_type == 1:
-            from training_models.roads.config import TRAINING_CONFIG as SELECTED_CONFIG
+            config_path = os.path.join(os.path.dirname(__file__), "roads", "config.json")
         else:
-            from training_models.buildings.config import TRAINING_CONFIG as SELECTED_CONFIG
-        self.input_shape = SELECTED_CONFIG["input_shape"]
-        self.batch_size = SELECTED_CONFIG["batch_size"]
-        self.epochs = SELECTED_CONFIG["epochs"]
-        self.learning_rate = SELECTED_CONFIG["learning_rate"]
-        self.training_config = SELECTED_CONFIG
+            config_path = os.path.join(os.path.dirname(__file__), "buildings", "config.json")
+        
+        with open(config_path, 'r') as f:
+            self.training_config = json.load(f)
+        
+        self.input_shape = tuple(self.training_config["input_shape"])
+        self.batch_size = self.training_config["batch_size"]
+        self.epochs = self.training_config["epochs"]
+        self.learning_rate = self.training_config["learning_rate"]
         
         print("\nSelect model architecture:")
         print("1. UNet (default)")
@@ -192,7 +198,8 @@ class ModelTrainer:
                 save_best_only=True,
                 verbose=1
             ),
-            EpochLogger(log_dir=self.log_dir, run_name=config["run_name"])
+            EpochLogger(log_dir=self.log_dir, run_name=config["run_name"]),
+            MLflowMetricsCallback(self.mlflow_manager)
         ]
         
         if self.training_config.get("reduce_lr_on_plateau", False):
@@ -229,6 +236,8 @@ class ModelTrainer:
         
         final_metrics = {metric: history.history[metric][-1] for metric in history.history.keys()}
         
+        self.mlflow_manager.log_metrics(final_metrics)
+        
         output_path = os.path.join(self.output_dir, config["model_type"], f"{config['run_name']}.keras")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         model.save(output_path)
@@ -238,6 +247,7 @@ class ModelTrainer:
         self.mlflow_manager.end_run()
         
         self.logger.info("Training process completed.")
+
 
 if __name__ == "__main__":
     logger = ColorLogger("Main").get_logger()

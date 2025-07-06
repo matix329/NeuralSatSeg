@@ -38,7 +38,7 @@ def resize_x_to_skip(x, skip):
     target_shape = tf.keras.backend.int_shape(skip)[1:3]
     return tf.image.resize(x, target_shape)
 
-def create_road_detection_cnn(input_shape=(640, 640, 3), num_classes=1, compile_model=True, callbacks=False, use_augmentation=True, weighted_bce_weight=0.2, loss_function=None, use_skip_connections=False):
+def create_road_detection_cnn(input_shape=(1300, 1300, 3), num_classes=1, compile_model=True, callbacks=False, use_augmentation=True, weighted_bce_weight=0.2, loss_function=None, use_skip_connections=False):
     inputs = layers.Input(input_shape)
     x = inputs
     if use_augmentation:
@@ -47,19 +47,19 @@ def create_road_detection_cnn(input_shape=(640, 640, 3), num_classes=1, compile_
     x = conv_block(x, 32, 0.3)
     if use_skip_connections:
         skip_connections.append(x)
-    x = layers.MaxPooling2D(2)(x)
+    x = layers.MaxPooling2D(2, padding='same')(x)
     x = conv_block(x, 64, 0.3)
     if use_skip_connections:
         skip_connections.append(x)
-    x = layers.MaxPooling2D(2)(x)
+    x = layers.MaxPooling2D(2, padding='same')(x)
     x = conv_block(x, 128, 0.3)
     if use_skip_connections:
         skip_connections.append(x)
-    x = layers.MaxPooling2D(2)(x)
+    x = layers.MaxPooling2D(2, padding='same')(x)
     x = conv_block(x, 256, 0.4)
     if use_skip_connections:
         skip_connections.append(x)
-    x = layers.MaxPooling2D(2)(x)
+    x = layers.MaxPooling2D(2, padding='same')(x)
     x = conv_block(x, 512, 0.4)
     if use_skip_connections:
         x = layers.UpSampling2D(2)(x)
@@ -83,6 +83,12 @@ def create_road_detection_cnn(input_shape=(640, 640, 3), num_classes=1, compile_
         x = conv_block(x, 64, 0.3)
         x = layers.UpSampling2D(2)(x)
         x = conv_block(x, 32, 0.3)
+    
+    target_height, target_width = input_shape[0], input_shape[1]
+    current_shape = tf.keras.backend.int_shape(x)
+    if current_shape[1] != target_height or current_shape[2] != target_width:
+        x = layers.Lambda(lambda img: tf.image.resize(img, [target_height, target_width]))(x)
+    
     outputs = layers.Conv2D(num_classes, 1, activation='sigmoid')(x)
     model = Model(inputs, outputs)
     if compile_model:

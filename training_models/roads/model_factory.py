@@ -1,14 +1,19 @@
+import os
+import json
 from models_code.roads.unet import create_unet, create_unet_graph
 from models_code.roads.cnn import create_cnn
 from models_code.roads.metrics import combined_loss, focal_loss
-from training_models.roads.config import TRAINING_CONFIG
 
 class ModelFactory:
     @staticmethod
     def create_model(architecture="unet", mask_type="binary", callbacks=False):
-        input_shape = TRAINING_CONFIG["input_shape"]
-        loss_type = TRAINING_CONFIG["loss"]
-        use_skip_connections = TRAINING_CONFIG["use_skip_connections"]
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        input_shape = tuple(config["input_shape"])
+        loss_type = config["loss"]
+        use_skip_connections = config["use_skip_connections"]
         
         if loss_type == "focal":
             loss_function = focal_loss
