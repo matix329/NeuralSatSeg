@@ -114,18 +114,22 @@ class RoadsDataPreparator:
                         continue
                         
                     graph_data = graph_mask_generator.prepare_mask(geojson_path, img_id)
-                    
+
+                    from torch_geometric.data import Data
+                    data = Data(
+                        x=graph_data['node_features'],
+                        edge_index=graph_data['edge_index'],
+                        edge_attr=graph_data['edge_attr']
+                    )
                     out_img_path = self.temp_image_dir / f"{self.city_name}_road_img{img_num}.tif"
                     out_binary_mask_path = self.temp_mask_binary_dir / f"{self.city_name}_road_mask{img_num}.tif"
                     out_graph_mask_path = self.temp_mask_graph_dir / f"{self.city_name}_road_mask{img_num}.pt"
-                    
                     try:
                         self.save_image(image, out_img_path)
                         self.save_image(binary_mask, out_binary_mask_path)
                         import torch
                         logger.info(f"Saving graph mask: {out_graph_mask_path}")
-                        empty_data = torch.zeros(1, 2)
-                        torch.save(empty_data, out_graph_mask_path)
+                        torch.save(data, out_graph_mask_path)
                         logger.info(f"Graph mask saved: {out_graph_mask_path}")
                     except Exception as e:
                         logger.error(f"Failed to save image/mask for {img_id}: {str(e)}")
