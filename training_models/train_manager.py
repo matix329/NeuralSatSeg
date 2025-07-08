@@ -129,17 +129,9 @@ class ModelTrainer:
         self.logger.info("Starting training process...")
         if config["model_type"] == "buildings" and config["architecture"] == "cnn":
             self.logger.info(f"Using reduced dataset for buildings (CNN): {REDUCED_DATASET_SIZE['train']} train / {REDUCED_DATASET_SIZE['val']} val")
-            self.batch_size = 4
-            train_data = None
-            val_data = None
         elif config["model_type"] == "buildings" and config["use_reduced_dataset"]:
             self.logger.info(f"Using reduced dataset for buildings: {REDUCED_DATASET_SIZE['train']} train / {REDUCED_DATASET_SIZE['val']} val")
             self.epochs = 20
-            train_data = None
-            val_data = None
-        else:
-            train_data = None
-            val_data = None
         
         mlflow.tensorflow.autolog(disable=True)
         self.mlflow_manager = MLflowManager(config["experiment_name"], "Training run")
@@ -161,6 +153,20 @@ class ModelTrainer:
             train_data = data_loader.load("train", mask_type=config["mask_type"])
             val_data = data_loader.load("val", mask_type=config["mask_type"])
         
+        train_batches = train_data.cardinality().numpy()
+        val_batches = val_data.cardinality().numpy()
+        steps_per_epoch = train_batches
+        validation_steps = val_batches
+        
+        self.logger.info(f"Dataset info:")
+        self.logger.info(f"  Train batches: {train_batches}")
+        self.logger.info(f"  Val batches: {val_batches}")
+        self.logger.info(f"  Batch size: {self.training_config['batch_size']}")
+        self.logger.info(f"  Steps per epoch: {steps_per_epoch}")
+        self.logger.info(f"  Validation steps: {validation_steps}")
+        
+
+        
         metrics = ["accuracy"]
         if config["model_type"] == "roads":
             metrics.extend([roads_dice_coefficient, roads_iou_score])
@@ -179,16 +185,14 @@ class ModelTrainer:
             "architecture": config["architecture"],
             "mask_type": config["mask_type"],
             "input_shape": self.input_shape,
-            "batch_size": self.batch_size,
+            "batch_size": self.training_config["batch_size"],
             "epochs": self.epochs,
             "learning_rate": self.learning_rate,
             "use_reduced_dataset": config["use_reduced_dataset"],
             "loss": self.training_config.get("loss", "bce_dice"),
-            "use_skip_connections": self.training_config.get("use_skip_connections", False)
+            "use_skip_connections": self.training_config.get("use_skip_connections", False),
+            "city": config.get("city", "all")
         })
-        
-        steps_per_epoch = max(1, train_data.cardinality().numpy() // self.batch_size)
-        validation_steps = max(1, val_data.cardinality().numpy() // self.batch_size)
         
         callbacks = [
             self.tensorboard_manager.get_callback(experiment_name=config["experiment_name"]),
@@ -226,7 +230,7 @@ class ModelTrainer:
             callbacks = default_callbacks + callbacks
         
         history = model.fit(
-            train_data.repeat(),
+            train_data,
             validation_data=val_data,
             epochs=self.epochs,
             steps_per_epoch=steps_per_epoch,

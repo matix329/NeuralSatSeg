@@ -2,12 +2,15 @@ import os
 import tensorflow as tf
 from scripts.color_logger import ColorLogger
 import torch
+from torch_geometric.data import Data
+from torch_geometric.data.data import DataEdgeAttr, DataTensorAttr
+from torch_geometric.data.storage import GlobalStorage
 import io
 from torch.serialization import safe_globals
-from torch_geometric.data import Data
 import numpy as np
 import json
 import rasterio
+import cv2
 
 class DataLoader:
     def __init__(self, config_path=None, use_imagenet_norm=False):
@@ -155,22 +158,57 @@ class DataLoader:
                     image = image.astype(np.float32) / 65535.0
                 else:
                     image = image.astype(np.float32) / 255.0
+                if len(image.shape) == 2:
+                    image = np.stack([image, image, image], axis=-1)
+                elif len(image.shape) == 3:
+                    if image.shape[2] == 1:
+                        image = np.concatenate([image, image, image], axis=-1)
+                    elif image.shape[2] == 3:
+                        pass
+                    elif image.shape[2] > 3:
+                        image = image[:, :, :3]
+                    else:
+                        image = np.concatenate([image, image, image], axis=-1)
                 return image
         
         image = tf.py_function(load_tiff_image, [image_path], tf.float32)
+        image.set_shape([None, None, 3])
         image = tf.image.resize(image, self.img_size)
         image = self.normalize_img(image)
         
         def load_pt_mask(mask_path):
-            return np.zeros((*self.img_size, 3), dtype=np.float32)
-            
+            try:
+                torch.serialization.add_safe_globals([Data, DataEdgeAttr, DataTensorAttr, GlobalStorage])
+                mask_path_str = mask_path.numpy().decode('utf-8')
+                data = torch.load(mask_path_str, map_location='cpu', weights_only=False)
+                mask = np.zeros((650, 650), dtype=np.float32)
+                if hasattr(data, 'x') and hasattr(data, 'edge_index'):
+                    nodes = data.x.cpu().numpy() if hasattr(data.x, 'cpu') else np.array(data.x)
+                    edges = data.edge_index.cpu().numpy() if hasattr(data.edge_index, 'cpu') else np.array(data.edge_index)
+                    edges = edges.T if edges.shape[0] == 2 else edges
+                    for edge in edges:
+                        i, j = edge
+                        x1, y1 = nodes[i]
+                        x2, y2 = nodes[j]
+                        pt1 = (int(round(x1)), int(round(y1)))
+                        pt2 = (int(round(x2)), int(round(y2)))
+                        cv2.line(mask, pt1, pt2, color=1.0, thickness=1)
+                else:
+                    print(f"[load_pt_mask] Invalid .pt file structure: {mask_path_str}")
+                return mask.astype(np.float32)
+            except Exception as e:
+                print(f"[load_pt_mask] Error loading {mask_path}: {e}")
+                return np.zeros((650, 650), dtype=np.float32)
+        
         mask = tf.py_function(
             load_pt_mask,
             [mask_path],
             tf.float32
         )
-        mask = tf.cast(mask, tf.float32)
-        mask.set_shape([self.img_size[0], self.img_size[1], 3])
+        mask.set_shape([self.img_size[0], self.img_size[1]])
+        mask = tf.expand_dims(mask, axis=-1)
+        mask = tf.image.resize(mask, self.img_size, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        mask.set_shape([self.img_size[0], self.img_size[1], 1])
         
         return image, mask
 

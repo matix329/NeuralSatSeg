@@ -37,9 +37,18 @@ class MLflowManager:
         for key, value in metrics.items():
             mlflow.log_metric(key, value, step=epoch)
 
+    def log_metric(self, key, value, step=None):
+        if isinstance(value, (int, float)):
+            mlflow.log_metric(key, float(value), step=step)
+        else:
+            mlflow.log_param(key, str(value))
+
     def log_metrics(self, metrics):
         for key, value in metrics.items():
-            mlflow.log_metric(key, value)
+            if isinstance(value, (int, float)):
+                mlflow.log_metric(key, float(value))
+            else:
+                mlflow.log_param(key, str(value))
 
     def log_model(self, model, model_name, input_example):
         input_example_path = os.path.join(self.input_example_dir, f"{self.experiment_name}_input_example.json")
@@ -54,6 +63,8 @@ class MLflowManager:
             artifact_path=model_name,
             signature=signature
         )
+        
+        mlflow.log_artifact(input_example_path, artifact_path="input_examples")
 
     def end_run(self):
         mlflow.end_run()
