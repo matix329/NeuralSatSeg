@@ -13,10 +13,21 @@ def main():
     processed_dir = os.path.join(data_dir, "processed")
     os.makedirs(processed_dir, exist_ok=True)
     cities = ["Vegas", "Paris", "Shanghai"]
-    data_types = ["roads", "buildings"]
-    
+
+    print("What do you want to process?")
+    print("1. Only roads")
+    print("2. Only buildings")
+    print("3. Roads and buildings (both)")
+    choice = input("Choose option (1-3): ").strip()
+    if choice == "1":
+        data_types = ["roads"]
+    elif choice == "2":
+        data_types = ["buildings"]
+    else:
+        data_types = ["roads", "buildings"]
+
     logger.info(f"Starting data preparation from base directory: {base_dir}")
-    
+
     for city in cities:
         logger.info(f"\nProcessing city: {city}")
         for data_type in data_types:
