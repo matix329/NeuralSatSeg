@@ -1,29 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
-import tensorflow.keras.backend as K
-
-def dice_coefficient(y_true, y_pred, smooth=1.0):
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
-
-def iou_score(y_true, y_pred, smooth=1.0):
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    union = K.sum(y_true_f) + K.sum(y_pred_f) - intersection
-    return (intersection + smooth) / (union + smooth)
-
-def tversky_loss(alpha=0.3, beta=0.7, smooth=1.0):
-    def loss(y_true, y_pred):
-        y_true_f = K.flatten(y_true)
-        y_pred_f = K.flatten(y_pred)
-        true_pos = K.sum(y_true_f * y_pred_f)
-        false_neg = K.sum(y_true_f * (1 - y_pred_f))
-        false_pos = K.sum((1 - y_true_f) * y_pred_f)
-        return 1 - (true_pos + smooth) / (true_pos + alpha * false_neg + beta * false_pos + smooth)
-    return loss
+from models_code.roads.metrics.metrics_binary import dice_coefficient, iou_score, tversky_loss
 
 def create_unet(input_shape=(650, 650, 3), num_classes=1):
     inputs = layers.Input(input_shape)

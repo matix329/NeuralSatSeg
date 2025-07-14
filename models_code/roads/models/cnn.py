@@ -1,8 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
-from models_code.roads.metrics import dice_coefficient, iou_score, dice_loss
-
+from models_code.roads.metrics.metrics_binary import dice_coefficient, iou_score, dice_loss
 
 def get_augmentation_layer():
     return tf.keras.Sequential([
