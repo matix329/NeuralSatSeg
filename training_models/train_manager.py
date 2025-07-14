@@ -154,6 +154,19 @@ class ModelTrainer:
             train_loader, val_loader = data_loader.get_graph_loaders(img_size=img_size, city=city)
             epoch_logger = EpochLogger(log_dir=self.log_dir, run_name=config["run_name"])
             mlflow_callback = MLflowMetricsCallback(self.mlflow_manager)
+            self.mlflow_manager.log_params({
+                "model_type": config["model_type"],
+                "architecture": config["architecture"],
+                "mask_type": config["mask_type"],
+                "input_shape": self.input_shape,
+                "batch_size": self.training_config["batch_size"],
+                "epochs": self.epochs,
+                "learning_rate": self.learning_rate,
+                "use_reduced_dataset": config["use_reduced_dataset"],
+                "loss": self.training_config.get("loss", "bce_dice"),
+                "use_skip_connections": self.training_config.get("use_skip_connections", False),
+                "city": config.get("city", "all")
+            })
             from models_code.roads.models.gnn import train_gnn
             train_gnn(model, train_loader, val_loader, self.training_config, self.logger, mlflow_callback, epoch_logger)
             return

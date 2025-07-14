@@ -23,7 +23,6 @@ class RoadGNN(nn.Module):
         x = self.dropout(x)
         x = self.gcn2(x, edge_index)
         x = x.view(-1)
-        x = torch.sigmoid(x)
         return x
 
 def create_gnn(*args, **kwargs):
@@ -34,7 +33,17 @@ def train_gnn(model, train_loader, val_loader, config, logger, mlflow_callback, 
     model = model.to(device)
     learning_rate = config["learning_rate"]
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = torch.nn.BCELoss()
+    total_positives = 0
+    total_negatives = 0
+    for _, label in train_loader:
+        label = label.view(-1)
+        total_positives += (label == 1).sum().item()
+        total_negatives += (label == 0).sum().item()
+    if total_positives == 0:
+        pos_weight = torch.tensor(1.0, device=device)
+    else:
+        pos_weight = torch.tensor(total_negatives / total_positives, device=device)
+    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
     best_val_loss = float('inf')
     patience_counter = 0
@@ -53,11 +62,6 @@ def train_gnn(model, train_loader, val_loader, config, logger, mlflow_callback, 
             label = label.view(-1)
             optimizer.zero_grad()
             out = model(data)
-            # DIAGNOSTYKA: logi tylko dla pierwszych 2 batchy w każdej epoce
-            if batch_idx < 2 and epoch < 3:
-                print(f"[DIAG][train] epoch={epoch} batch={batch_idx} out min={out.min().item():.4f} max={out.max().item():.4f} mean={out.mean().item():.4f}")
-                print(f"[DIAG][train] epoch={epoch} batch={batch_idx} label sum={label.sum().item()} shape={label.shape} out.shape={out.shape}")
-            assert out.shape == label.shape, f"out shape: {out.shape}, label shape: {label.shape}"
             loss = criterion(out, label)
             loss.backward()
             optimizer.step()
@@ -73,13 +77,10 @@ def train_gnn(model, train_loader, val_loader, config, logger, mlflow_callback, 
                 label = label.to(device)
                 label = label.view(-1)
                 out = model(data)
-                if batch_idx < 2 and epoch < 3:
-                    print(f"[DIAG][val] epoch={epoch} batch={batch_idx} out min={out.min().item():.4f} max={out.max().item():.4f} mean={out.mean().item():.4f}")
-                    print(f"[DIAG][val] epoch={epoch} batch={batch_idx} label sum={label.sum().item()} shape={label.shape} out.shape={out.shape}")
-                assert out.shape == label.shape, f"out shape: {out.shape}, label shape: {label.shape}"
                 loss = criterion(out, label)
                 val_loss += loss.item()
-                preds.append(out.detach().cpu())
+                probs = torch.sigmoid(out.detach().cpu())
+                preds.append(probs)
                 gts.append(label.detach().cpu())
         val_loss /= len(val_loader)
         preds = torch.cat(preds)

@@ -7,9 +7,10 @@ import warnings
 import torch
 from torch_geometric.data import Data
 from rasterio.features import rasterize
-from shapely.geometry import mapping, LineString, MultiLineString
+from shapely.geometry import mapping, LineString, MultiLineString, Point
 from typing import Dict, Optional
 from .mask_generator import BaseMaskGenerator, MaskConfig
+from scipy.spatial import cKDTree
 import cv2
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,6 @@ class RoadBinaryMaskGenerator(BaseMaskGenerator):
 
     def save_debug_mask(self, mask: np.ndarray, geojson_path: str, img_id: str):
         try:
-            import rasterio
             debug_dir = os.path.join(os.path.dirname(geojson_path), "debug_masks")
             os.makedirs(debug_dir, exist_ok=True)
             filename = os.path.basename(geojson_path).replace('.geojson', '_mask.tif')
@@ -139,8 +139,6 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
             raise ValueError(f"GeoJSON file {geojson_path} is empty or invalid.")
         transform, crs, size = self.get_tiff_parameters(img_id)
         gdf = gdf.to_crs(crs)
-        from shapely.geometry import Point
-        from scipy.spatial import cKDTree
         node_pos = []
         all_lines = []
         for idx, row in gdf.iterrows():
@@ -163,6 +161,10 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
                         col_img = int((col_img / size[1]) * self.output_size[1])
                         row_img = int((row_img / size[0]) * self.output_size[0])
                         node_pos.append((col_img, row_img))
+        grid_step = 32
+        for x in range(0, self.output_size[0], grid_step):
+            for y in range(0, self.output_size[1], grid_step):
+                node_pos.append((x, y))
         if len(node_pos) == 0:
             raise ValueError(f"No valid road segments found in {geojson_path}")
         node_pos = np.array(node_pos)
@@ -210,7 +212,7 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
                     nb = group_map[(col_b, row_b)]
                     if na != nb:
                         edges.append((na, nb))
-        node_features = torch.tensor(group_centers, dtype=torch.float32)
+        node_features = torch.tensor(np.array(group_centers), dtype=torch.float32)
         edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous() if edges else torch.empty((2,0), dtype=torch.long)
         edge_attr = torch.ones((edge_index.shape[1], 1), dtype=torch.float32) if edge_index.numel() > 0 else torch.empty((0,1), dtype=torch.float32)
         y = []
