@@ -11,6 +11,8 @@ import numpy as np
 import json
 import rasterio
 import cv2
+from training_models.roads.mask_loader import GraphMaskDataset
+from torch_geometric.loader import DataLoader as TorchGeometricDataLoader
 
 class DataLoader:
     def __init__(self, config_path=None, use_imagenet_norm=False):
@@ -28,43 +30,43 @@ class DataLoader:
         self.imagenet_mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
         self.imagenet_std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
         
+    def get_mask_paths(self, split="train", mask_type="binary", city=None):
+        data_dir = os.path.join(self.project_root, f"data/processed/{split}/roads")
+        if not os.path.exists(data_dir):
+            raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+        mask_dir = "masks_binary" if mask_type == "binary" else "masks_graph"
+        mask_extension = ".tif" if mask_type == "binary" else ".pt"
+        mask_files = [f for f in os.listdir(os.path.join(data_dir, mask_dir)) if f.endswith(mask_extension)]
+        if city is not None and city.lower() != "all":
+            mask_files = [f for f in mask_files if city in f]
+        mask_paths = sorted([os.path.join(data_dir, mask_dir, f) for f in mask_files])
+        if not mask_paths:
+            raise FileNotFoundError(f"No mask files found in {data_dir}/{mask_dir} for city: {city}")
+        return mask_paths
+
     def load(self, split="train", mask_type="binary", city=None):
         data_dir = os.path.join(self.project_root, f"data/processed/{split}/roads")
         if not os.path.exists(data_dir):
             raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
-        
         image_files = [f for f in os.listdir(os.path.join(data_dir, "images")) if f.endswith(".tif")]
-        mask_dir = "masks_binary" if mask_type == "binary" else "masks_graph"
-        mask_extension = ".tif" if mask_type == "binary" else ".pt"
-        mask_files = [f for f in os.listdir(os.path.join(data_dir, mask_dir)) if f.endswith(mask_extension)]
-
-        if city is not None:
+        if city is not None and city.lower() != "all":
             image_files = [f for f in image_files if city in f]
-            mask_files = [f for f in mask_files if city in f]
-
         image_paths = sorted([os.path.join(data_dir, "images", f) for f in image_files])
-        mask_paths = sorted([os.path.join(data_dir, mask_dir, f) for f in mask_files])
-        
+        mask_paths = self.get_mask_paths(split=split, mask_type=mask_type, city=city)
         if not image_paths or not mask_paths:
             raise FileNotFoundError(f"No image-mask pairs found in {data_dir} for city: {city}")
-        
         self.logger.info(f"Found {len(image_paths)} image-mask pairs for city: {city if city else 'ALL'}")
         self.logger.info(f"Sample image path: {image_paths[0]}")
         self.logger.info(f"Sample mask path: {mask_paths[0]}")
-        
         image_paths = tf.convert_to_tensor(image_paths, dtype=tf.string)
         mask_paths = tf.convert_to_tensor(mask_paths, dtype=tf.string)
-        
         dataset = tf.data.Dataset.from_tensor_slices((image_paths, mask_paths))
-        
         if mask_type == "binary":
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_binary(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
         else:
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_graph(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
-        
         if split == "train":
             dataset = dataset.map(self.augment_data, num_parallel_calls=tf.data.AUTOTUNE)
-        
         dataset = dataset.batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
         return dataset
     
@@ -211,6 +213,17 @@ class DataLoader:
         mask.set_shape([self.img_size[0], self.img_size[1], 1])
         
         return image, mask
+
+    def get_graph_loaders(self, img_size, city=None, batch_size=1):
+        train_files = self.get_mask_paths(split="train", mask_type="graph", city=city)
+        val_files = self.get_mask_paths(split="val", mask_type="graph", city=city)
+        train_dataset = GraphMaskDataset(root_dir=os.path.dirname(train_files[0]), img_size=img_size[0] if isinstance(img_size, (list, tuple)) else img_size)
+        train_dataset.pt_files = [os.path.basename(f) for f in train_files]
+        val_dataset = GraphMaskDataset(root_dir=os.path.dirname(val_files[0]), img_size=img_size[0] if isinstance(img_size, (list, tuple)) else img_size)
+        val_dataset.pt_files = [os.path.basename(f) for f in val_files]
+        train_loader = TorchGeometricDataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = TorchGeometricDataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        return train_loader, val_loader
 
 def tfa_rotate(image, angle):
     angle_deg = angle * 180.0 / np.pi

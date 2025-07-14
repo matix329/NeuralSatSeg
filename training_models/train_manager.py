@@ -4,17 +4,19 @@ import numpy as np
 import mlflow.tensorflow
 import mlflow
 import tensorflow as tf
+import torch
 from tensorflow.keras.optimizers import Adam
 from scripts.color_logger import ColorLogger
 from scripts.mlflow_manager import MLflowManager
 from scripts.tensorboard import TensorboardManager
-from models_code.roads.metrics import dice_coefficient as roads_dice_coefficient
-from models_code.roads.metrics import iou_score as roads_iou_score
+from models_code.roads.metrics.metrics_binary import dice_coefficient as roads_dice_coefficient
+from models_code.roads.metrics.metrics_binary import iou_score as roads_iou_score
 from models_code.buildings.metrics import dice_coefficient as buildings_dice_coefficient
 from models_code.buildings.metrics import iou_score as buildings_iou_score
 from training_models.buildings.config import REDUCED_DATASET_SIZE
 from scripts.epoch_logger_callback import EpochLogger
 from scripts.mlflow_metrics_callback import MLflowMetricsCallback
+from training_models.roads.model_factory import ModelFactory
 
 tf.config.set_visible_devices([], 'GPU')
 tf.config.threading.set_inter_op_parallelism_threads(1)
@@ -44,31 +46,28 @@ class ModelTrainer:
             config_path = os.path.join(os.path.dirname(__file__), "roads", "config.json")
         else:
             config_path = os.path.join(os.path.dirname(__file__), "buildings", "config.json")
-        
         with open(config_path, 'r') as f:
             self.training_config = json.load(f)
-        
         self.input_shape = tuple(self.training_config["input_shape"])
         self.batch_size = self.training_config["batch_size"]
         self.epochs = self.training_config["epochs"]
         self.learning_rate = self.training_config["learning_rate"]
-        
-        print("\nSelect model architecture:")
-        print("1. UNet (default)")
-        print("2. CNN")
-        architecture = int(input("Choose option (1-2): "))
-        
         use_reduced_dataset = False
-        if model_type == 2:
-            print("\nUse reduced dataset to match roads size? (y/n):")
-            use_reduced_dataset = input().lower() == 'y'
-        
         if model_type == 1:
             print("\nSelect road mask type:")
             print("1. Binary")
             print("2. Graph")
-            mask_type = int(input("Choose option (1-2): "))
-            mask_type = "binary" if mask_type == 1 else "graph"
+            mask_type_choice = int(input("Choose option (1-2): "))
+            mask_type = "binary" if mask_type_choice == 1 else "graph"
+            if mask_type == "binary":
+                print("\nSelect model architecture:")
+                print("1. UNet (default)")
+                print("2. CNN")
+                arch_choice = int(input("Choose option (1-2): "))
+                arch = "unet" if arch_choice == 1 else "cnn"
+            else:
+                print("\nGraph mask selected. GNN architecture is used automatically.")
+                arch = "gnn"
             print("\nSelect city:")
             print("1. Paris")
             print("2. Vegas")
@@ -82,20 +81,25 @@ class ModelTrainer:
             elif city_option == 3:
                 city = "Shanghai"
             else:
-                city = None  # None oznacza wszystkie miasta
+                city = None
         else:
             print("\nSelect building mask type:")
             print("1. Original")
             print("2. Eroded")
-            mask_type = int(input("Choose option (1-2): "))
-            mask_type = "original" if mask_type == 1 else "eroded"
-        
+            mask_type_choice = int(input("Choose option (1-2): "))
+            mask_type = "original" if mask_type_choice == 1 else "eroded"
+            print("\nSelect model architecture:")
+            print("1. UNet (default)")
+            print("2. CNN")
+            arch_choice = int(input("Choose option (1-2): "))
+            arch = "unet" if arch_choice == 1 else "cnn"
+            print("\nUse reduced dataset to match roads size? (y/n):")
+            use_reduced_dataset = input().lower() == 'y'
         experiment_name = input("\nEnter experiment name: ")
         run_name = input("Enter model name: ")
-        
         return {
             "model_type": "roads" if model_type == 1 else "buildings",
-            "architecture": "unet" if architecture == 1 else "cnn",
+            "architecture": arch,
             "mask_type": mask_type,
             "experiment_name": experiment_name,
             "run_name": run_name,
@@ -142,6 +146,17 @@ class ModelTrainer:
         default_callbacks = []
         if config["model_type"] == "roads" and config["architecture"] == "cnn" and isinstance(model_obj, tuple):
             model, default_callbacks = model_obj
+        
+        if config["model_type"] == "roads" and config["architecture"] == "gnn":
+            img_size = self.training_config.get("img_size", 512)
+            city = config.get("city", None)
+            model = ModelFactory.create_model(architecture="gnn")
+            train_loader, val_loader = data_loader.get_graph_loaders(img_size=img_size, city=city)
+            epoch_logger = EpochLogger(log_dir=self.log_dir, run_name=config["run_name"])
+            mlflow_callback = MLflowMetricsCallback(self.mlflow_manager)
+            from models_code.roads.models.gnn import train_gnn
+            train_gnn(model, train_loader, val_loader, self.training_config, self.logger, mlflow_callback, epoch_logger)
+            return
         
         if config["model_type"] == "buildings" and config["use_reduced_dataset"]:
             train_data = data_loader.load("train", limit_samples=True, mask_type=config["mask_type"])

@@ -1,8 +1,9 @@
 import os
 import json
-from models_code.roads.unet import create_unet, create_unet_graph
-from models_code.roads.cnn import create_cnn
-from models_code.roads.metrics import combined_loss, focal_loss
+from models_code.roads.models.unet import create_unet
+from models_code.roads.models.cnn import create_cnn
+from models_code.roads.models.gnn import create_gnn
+from models_code.roads.metrics.metrics_binary import combined_loss, focal_loss
 
 class ModelFactory:
     @staticmethod
@@ -24,7 +25,7 @@ class ModelFactory:
         
         if architecture == "unet":
             if mask_type == "graph":
-                return create_unet_graph(input_shape=input_shape)
+                raise ValueError("create_unet_graph has been removed - use GNN instead!")
             return create_unet(input_shape=input_shape)
         elif architecture == "cnn":
             return create_cnn(
@@ -33,5 +34,7 @@ class ModelFactory:
                 loss_function=loss_function,
                 use_skip_connections=use_skip_connections
             )
+        elif architecture == "gnn":
+            return create_gnn()
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
