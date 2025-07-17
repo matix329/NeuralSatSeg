@@ -15,11 +15,15 @@ from training_models.roads.mask_loader import GraphMaskDataset
 from torch_geometric.loader import DataLoader as TorchGeometricDataLoader
 
 class DataLoader:
-    def __init__(self, config_path=None, use_imagenet_norm=False):
+    def __init__(self, config_path=None, use_imagenet_norm=False, mask_type="binary"):
         self.logger = ColorLogger("DataLoader").get_logger()
         self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        self.mask_type = mask_type
         if config_path is None:
-            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if self.mask_type == "graph":
+                config_path = os.path.join(os.path.dirname(__file__), "config_graph.json")
+            else:
+                config_path = os.path.join(os.path.dirname(__file__), "config_binary.json")
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         self.batch_size = self.config["batch_size"]
@@ -31,6 +35,8 @@ class DataLoader:
         self.imagenet_std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
         
     def get_mask_paths(self, split="train", mask_type="binary", city=None):
+        if mask_type != self.mask_type:
+            self.mask_type = mask_type
         data_dir = os.path.join(self.project_root, f"data/processed/{split}/roads")
         if not os.path.exists(data_dir):
             raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
@@ -44,7 +50,9 @@ class DataLoader:
             raise FileNotFoundError(f"No mask files found in {data_dir}/{mask_dir} for city: {city}")
         return mask_paths
 
-    def load(self, split="train", mask_type="binary", city=None):
+    def load(self, split="train", mask_type=None, city=None):
+        if mask_type is not None:
+            self.mask_type = mask_type
         data_dir = os.path.join(self.project_root, f"data/processed/{split}/roads")
         if not os.path.exists(data_dir):
             raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
@@ -52,7 +60,7 @@ class DataLoader:
         if city is not None and city.lower() != "all":
             image_files = [f for f in image_files if city in f]
         image_paths = sorted([os.path.join(data_dir, "images", f) for f in image_files])
-        mask_paths = self.get_mask_paths(split=split, mask_type=mask_type, city=city)
+        mask_paths = self.get_mask_paths(split=split, mask_type=self.mask_type, city=city)
         if not image_paths or not mask_paths:
             raise FileNotFoundError(f"No image-mask pairs found in {data_dir} for city: {city}")
         self.logger.info(f"Found {len(image_paths)} image-mask pairs for city: {city if city else 'ALL'}")
@@ -61,7 +69,7 @@ class DataLoader:
         image_paths = tf.convert_to_tensor(image_paths, dtype=tf.string)
         mask_paths = tf.convert_to_tensor(mask_paths, dtype=tf.string)
         dataset = tf.data.Dataset.from_tensor_slices((image_paths, mask_paths))
-        if mask_type == "binary":
+        if self.mask_type == "binary":
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_binary(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
         else:
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_graph(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
@@ -214,9 +222,11 @@ class DataLoader:
         
         return image, mask
 
-    def get_graph_loaders(self, img_size, city=None, batch_size=1):
-        train_files = self.get_mask_paths(split="train", mask_type="graph", city=city)
-        val_files = self.get_mask_paths(split="val", mask_type="graph", city=city)
+    def get_graph_loaders(self, img_size, city=None, batch_size=1, mask_type=None):
+        if mask_type is not None:
+            self.mask_type = mask_type
+        train_files = self.get_mask_paths(split="train", mask_type=self.mask_type, city=city)
+        val_files = self.get_mask_paths(split="val", mask_type=self.mask_type, city=city)
         train_dataset = GraphMaskDataset(root_dir=os.path.dirname(train_files[0]), img_size=img_size[0] if isinstance(img_size, (list, tuple)) else img_size)
         train_dataset.pt_files = [os.path.basename(f) for f in train_files]
         val_dataset = GraphMaskDataset(root_dir=os.path.dirname(val_files[0]), img_size=img_size[0] if isinstance(img_size, (list, tuple)) else img_size)

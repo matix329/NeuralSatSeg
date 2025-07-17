@@ -4,11 +4,20 @@ import numpy as np
 import torch
 from torch_geometric.data import Data, Dataset
 import json
+from torch_geometric.data import Data
+from torch_geometric.data.data import DataEdgeAttr, DataTensorAttr
+from torch_geometric.data.storage import GlobalStorage
+import torch
+import tensorflow as tf
 
 class MaskLoader:
-    def __init__(self, img_size=None, config_path=None):
+    def __init__(self, img_size=None, config_path=None, mask_type="binary"):
+        self.mask_type = mask_type
         if config_path is None:
-            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if self.mask_type == "graph":
+                config_path = os.path.join(os.path.dirname(__file__), "config_graph.json")
+            else:
+                config_path = os.path.join(os.path.dirname(__file__), "config_binary.json")
         with open(config_path, 'r') as f:
             config = json.load(f)
         config_img_size = tuple(config.get("img_size", [512, 512]))
@@ -33,7 +42,6 @@ class MaskLoader:
                     if np.isnan(mask).any() or np.isinf(mask).any():
                         raise ValueError(f"Maska zawiera NaN lub inf: {mask_path}")
             else:
-                import tensorflow as tf
                 mask = tf.io.read_file(mask_path)
                 mask = tf.image.decode_png(mask, channels=1)
                 mask = tf.cast(mask, tf.float32) / 255.0
@@ -52,6 +60,7 @@ class GraphMaskDataset(Dataset):
         return len(self.pt_files)
 
     def get(self, idx):
+        torch.serialization.add_safe_globals([Data, DataEdgeAttr, DataTensorAttr, GlobalStorage])
         pt_path = os.path.join(self.root_dir, self.pt_files[idx])
         data = torch.load(pt_path, map_location='cpu', weights_only=False)
         if hasattr(data, 'x') and data.x is not None:

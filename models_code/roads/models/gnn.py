@@ -39,20 +39,29 @@ def train_gnn(model, train_loader, val_loader, config, logger, mlflow_callback, 
         label = label.view(-1)
         total_positives += (label == 1).sum().item()
         total_negatives += (label == 0).sum().item()
+    total = total_positives + total_negatives
+    pos_ratio = total_positives / total if total > 0 else 0.0
+    logger.info(f"Class distribution: positives={total_positives}, negatives={total_negatives}, pos_ratio={pos_ratio:.4f}")
+    if pos_ratio < 0.05:
+        logger.warning("Highly imbalanced classes: <5% positive class! Check your masks or consider oversampling/undersampling.")
     if total_positives == 0:
         pos_weight = torch.tensor(1.0, device=device)
     else:
         pos_weight = torch.tensor(total_negatives / total_positives, device=device)
+    logger.info(f"pos_weight for BCEWithLogitsLoss: {pos_weight.item():.4f}")
     criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
     best_val_loss = float('inf')
     patience_counter = 0
     if "epochs" not in config:
-        raise ValueError("Brak parametru 'epochs' w config! Dodaj go do config.json.")
+        raise ValueError("Missing 'epochs' parameter in config! Add it to config_graph.json.")
     if "patience" not in config:
-        raise ValueError("Brak parametru 'patience' w config! Dodaj go do config.json.")
+        raise ValueError("Missing 'patience' parameter in config! Add it to config_graph.json.")
     EPOCHS = config["epochs"]
     PATIENCE = config["patience"]
+    f1_history = []
+    iou_history = []
+    val_loss_history = []
     for epoch in range(EPOCHS):
         model.train()
         epoch_loss = 0
@@ -60,6 +69,10 @@ def train_gnn(model, train_loader, val_loader, config, logger, mlflow_callback, 
             data = data.to(device)
             label = label.to(device)
             label = label.view(-1)
+            if epoch == 0 and batch_idx == 0:
+                logger.info(f"data.x shape: {data.x.shape}, data.edge_index shape: {data.edge_index.shape}")
+                if data.x.shape[0] == 0 or data.edge_index.shape[1] == 0:
+                    logger.warning("Empty graph detected! Check your .pt files and mask generation.")
             optimizer.zero_grad()
             out = model(data)
             loss = criterion(out, label)
@@ -105,8 +118,13 @@ def train_gnn(model, train_loader, val_loader, config, logger, mlflow_callback, 
         }
         epoch_logger.on_epoch_end(epoch, logs)
         mlflow_callback.on_epoch_end(epoch, logs)
-        scheduler.step(val_loss)
         logger.info(f"Epoch {epoch+1}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, edge_f1={f1:.4f}, edge_iou={iou:.4f}")
+        f1_history.append(f1)
+        iou_history.append(iou)
+        val_loss_history.append(val_loss)
+        if epoch >= 5 and all(f == 0.0 for f in f1_history[-5:]):
+            logger.warning("edge_f1 == 0.0 for the last 5 epochs! Check class distribution, masks or graph generation.")
+        scheduler.step(val_loss)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
@@ -116,4 +134,7 @@ def train_gnn(model, train_loader, val_loader, config, logger, mlflow_callback, 
             patience_counter += 1
             if patience_counter >= PATIENCE:
                 logger.info("Early stopping!")
-                break 
+                break
+    logger.info("\nEpoch | edge_f1 | edge_iou | val_loss")
+    for i, (f1, iou, vloss) in enumerate(zip(f1_history, iou_history, val_loss_history)):
+        logger.info(f"{i+1:5d} | {f1:7.4f} | {iou:8.4f} | {vloss:8.4f}") 

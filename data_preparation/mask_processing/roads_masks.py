@@ -243,7 +243,8 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
             data = Data(
                 x=graph_data['node_features'],
                 edge_index=graph_data['edge_index'],
-                edge_attr=graph_data['edge_attr']
+                edge_attr=graph_data['edge_attr'],
+                y=graph_data['y']
             )
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)

@@ -1,0 +1,10 @@
+{
+  "hidden_channels": 32,
+  "dropout": 0.2,
+  "heads": 2,
+  "batch_size": 4,
+  "epochs": 50,
+  "learning_rate": 0.0003,
+  "patience": 7,
+  "img_size": [512, 512]
+} 
