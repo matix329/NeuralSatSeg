@@ -70,9 +70,6 @@ class RoadBinaryMaskGenerator(BaseMaskGenerator):
             if self.config.erosion_kernel_size > 0 and self.config.erosion_iterations > 0:
                 mask = self.apply_erosion_dilation(mask)
             
-            if self.config.save_debug_mask:
-                self.save_debug_mask(mask, geojson_path, img_id)
-            
             if not self.validate_mask(mask):
                 return None
                 
@@ -92,28 +89,6 @@ class RoadBinaryMaskGenerator(BaseMaskGenerator):
             mask[eroded == 0] = 0.0
             
         return mask
-
-    def save_debug_mask(self, mask: np.ndarray, geojson_path: str, img_id: str):
-        try:
-            debug_dir = os.path.join(os.path.dirname(geojson_path), "debug_masks")
-            os.makedirs(debug_dir, exist_ok=True)
-            filename = os.path.basename(geojson_path).replace('.geojson', '_mask.tif')
-            debug_path = os.path.join(debug_dir, filename)
-            transform, crs, _ = self.get_tiff_parameters(img_id)
-            with rasterio.open(
-                debug_path, 'w',
-                driver='GTiff',
-                height=mask.shape[0],
-                width=mask.shape[1],
-                count=1,
-                dtype=mask.dtype,
-                crs=crs,
-                transform=transform
-            ) as dst:
-                dst.write(mask, 1)
-            logger.info(f"Debug mask saved to {debug_path}")
-        except Exception as e:
-            logger.warning(f"Failed to save debug mask: {str(e)}")
 
     def find_tiff_path(self, img_id: str) -> str:
         for root, _, files in os.walk(os.path.dirname(os.path.dirname(self.geojson_folder))):

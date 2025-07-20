@@ -14,7 +14,6 @@ class MaskConfig:
     line_width: int = 5
     erosion_kernel_size: int = 3
     erosion_iterations: int = 1
-    save_debug_mask: bool = False
     min_coverage_percent: float = 0.5
 
 class BaseMaskGenerator(ABC):

@@ -1,29 +1,34 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv
+from torch_geometric.nn import SAGEConv, BatchNorm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from models_code.roads.metrics.metrics_graph import edge_precision, edge_recall, edge_f1, edge_iou, edge_mae, edge_rmse, edge_spearman
 
 class RoadGNN(nn.Module):
-    def __init__(self, in_channels=2, hidden_channels=32, heads=2, dropout=0.2):
+    def __init__(self, in_channels=2, hidden_channels=64, dropout=0.3):
         super().__init__()
-        self.gcn1 = GCNConv(in_channels, hidden_channels)
-        self.gat = GATConv(hidden_channels, hidden_channels, heads=heads, concat=False, dropout=dropout)
-        self.gcn2 = GCNConv(hidden_channels, 1)
+        self.sage1 = SAGEConv(in_channels, hidden_channels)
+        self.bn1 = BatchNorm(hidden_channels)
+        self.sage2 = SAGEConv(hidden_channels, hidden_channels)
+        self.bn2 = BatchNorm(hidden_channels)
+        self.sage3 = SAGEConv(hidden_channels, 1)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        x = self.gcn1(x, edge_index)
-        x = F.relu(x)
-        x = self.dropout(x)
-        x = self.gat(x, edge_index)
-        x = F.relu(x)
-        x = self.dropout(x)
-        x = self.gcn2(x, edge_index)
-        x = x.view(-1)
-        return x
+        x1 = self.sage1(x, edge_index)
+        x1 = self.bn1(x1)
+        x1 = F.relu(x1)
+        x1 = self.dropout(x1)
+        x2 = self.sage2(x1, edge_index)
+        x2 = self.bn2(x2)
+        x2 = F.relu(x2)
+        x2 = self.dropout(x2)
+        x2 = x2 + x1
+        x3 = self.sage3(x2, edge_index)
+        x3 = x3.view(-1)
+        return x3
 
 def create_gnn(*args, **kwargs):
     return RoadGNN(*args, **kwargs)

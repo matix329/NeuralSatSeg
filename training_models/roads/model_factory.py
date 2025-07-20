@@ -50,7 +50,6 @@ class ModelFactory:
         elif architecture == "gnn":
             return create_gnn(
                 hidden_channels=config["hidden_channels"],
-                heads=config["heads"],
                 dropout=config["dropout"]
             )
         else:
