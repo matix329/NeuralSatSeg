@@ -1,0 +1,10 @@
+{
+  "batch_size": 4,
+  "img_size": [512, 512],
+  "input_shape": [512, 512, 3],
+  "epochs": 50,
+  "learning_rate": 0.0003,
+  "loss": "bce_dice",
+  "use_skip_connections": true,
+  "patience": 7
+} 

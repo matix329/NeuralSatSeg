@@ -8,6 +8,8 @@ def dice_coefficient(y_true, y_pred, smooth=1.0):
     return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
 
 def dice_loss(y_true, y_pred, smooth=1.0):
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(y_pred, tf.float32)
     return 1.0 - dice_coefficient(y_true, y_pred, smooth)
 
 def iou_score(y_true, y_pred, smooth=1.0):
@@ -55,6 +57,8 @@ def focal_loss(y_true, y_pred, alpha=0.25, gamma=2.0):
     return K.mean(loss)
 
 def combined_loss(y_true, y_pred):
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(y_pred, tf.float32)
     bce = tf.keras.losses.binary_crossentropy(y_true, y_pred)
     dsc = dice_loss(y_true, y_pred)
     return bce + dsc 

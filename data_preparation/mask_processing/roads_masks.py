@@ -4,22 +4,21 @@ import numpy as np
 import logging
 import os
 import warnings
-import networkx as nx
 import torch
 from torch_geometric.data import Data
 from rasterio.features import rasterize
-from shapely.geometry import mapping
+from shapely.geometry import mapping, LineString, MultiLineString, Point
 from typing import Dict, Optional
 from .mask_generator import BaseMaskGenerator, MaskConfig
+from scipy.spatial import cKDTree
 import cv2
-import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
 class RoadBinaryMaskGenerator(BaseMaskGenerator):
     def __init__(self, geojson_folder: str, config: Optional[MaskConfig] = None):
         super().__init__(geojson_folder, config)
-        self.output_size = (650, 650)
+        self.output_size = (1300, 1300)
 
     def prepare_mask(self, geojson_path: str, img_id: str) -> Optional[np.ndarray]:
         try:
@@ -98,23 +97,21 @@ class RoadBinaryMaskGenerator(BaseMaskGenerator):
         try:
             debug_dir = os.path.join(os.path.dirname(geojson_path), "debug_masks")
             os.makedirs(debug_dir, exist_ok=True)
-            
-            filename = os.path.basename(geojson_path).replace('.geojson', '_mask.png')
+            filename = os.path.basename(geojson_path).replace('.geojson', '_mask.tif')
             debug_path = os.path.join(debug_dir, filename)
-            
-            road_pixels = np.sum(mask > 0)
-            total_pixels = mask.shape[0] * mask.shape[1]
-            coverage_percent = (road_pixels / total_pixels) * 100
-            
-            plt.figure(figsize=(10, 8))
-            plt.imshow(mask, cmap='gray')
-            plt.title(f'Road Mask - {img_id}\nCoverage: {coverage_percent:.2f}% ({road_pixels} pixels)')
-            plt.colorbar()
-            plt.savefig(debug_path, dpi=150, bbox_inches='tight')
-            plt.close()
-            
+            transform, crs, _ = self.get_tiff_parameters(img_id)
+            with rasterio.open(
+                debug_path, 'w',
+                driver='GTiff',
+                height=mask.shape[0],
+                width=mask.shape[1],
+                count=1,
+                dtype=mask.dtype,
+                crs=crs,
+                transform=transform
+            ) as dst:
+                dst.write(mask, 1)
             logger.info(f"Debug mask saved to {debug_path}")
-            
         except Exception as e:
             logger.warning(f"Failed to save debug mask: {str(e)}")
 
@@ -140,60 +137,104 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
         gdf = gpd.read_file(geojson_path)
         if gdf.empty:
             raise ValueError(f"GeoJSON file {geojson_path} is empty or invalid.")
-            
         transform, crs, size = self.get_tiff_parameters(img_id)
         gdf = gdf.to_crs(crs)
-        
-        road_graph = nx.Graph()
-        node_id = 0
-        node_mapping = {}
-        
+        node_pos = []
+        all_lines = []
         for idx, row in gdf.iterrows():
-            line = row.geometry
-            if not line.is_valid:
+            geom = row.geometry
+            if not geom.is_valid:
                 continue
-                
-            coords = np.array(line.coords)
-            pixel_coords = []
-            for x, y in coords:
-                col_img, row_img = ~transform * (x, y)
-                col_img = int((col_img / size[1]) * self.output_size[1])
-                row_img = int((row_img / size[0]) * self.output_size[0])
-                pixel_coords.append((col_img, row_img))
-            
-            for i in range(len(pixel_coords) - 1):
-                p1, p2 = pixel_coords[i], pixel_coords[i + 1]
-                
-                for p in [p1, p2]:
-                    if p not in node_mapping:
-                        node_mapping[p] = node_id
-                        road_graph.add_node(node_id, pos=p)
-                        node_id += 1
-                
-                width = self.config.line_width
-                typ = 'unknown'
-                if hasattr(row, 'get'):
-                    width = row.get('width', width)
-                    typ = row.get('type', typ)
-                elif isinstance(row, dict):
-                    width = row.get('width', width)
-                    typ = row.get('type', typ)
-                else:
-                    logger.warning(f"Unexpected record type in geojson: {type(row)} for img_id={img_id}, idx={idx}")
-                
-                road_graph.add_edge(node_mapping[p1], node_mapping[p2], width=width, type=typ)
-        
-        if len(road_graph.nodes) == 0:
+            lines = []
+            if isinstance(geom, LineString):
+                lines = [geom]
+            elif isinstance(geom, MultiLineString):
+                lines = list(geom.geoms)
+            else:
+                continue
+            all_lines.extend(lines)
+            for line in lines:
+                coords = np.array(line.coords)
+                for i in range(len(coords) - 1):
+                    for pt in [coords[i], coords[i+1]]:
+                        col_img, row_img = ~transform * (pt[0], pt[1])
+                        col_img = int((col_img / size[1]) * self.output_size[1])
+                        row_img = int((row_img / size[0]) * self.output_size[0])
+                        node_pos.append((col_img, row_img))
+        grid_step = 32
+        for x in range(0, self.output_size[0], grid_step):
+            for y in range(0, self.output_size[1], grid_step):
+                node_pos.append((x, y))
+        if len(node_pos) == 0:
             raise ValueError(f"No valid road segments found in {geojson_path}")
-            
-        node_features = torch.tensor([road_graph.nodes[n]['pos'] for n in road_graph.nodes], dtype=torch.float32)
-        edge_index = torch.tensor(list(road_graph.edges)).t().contiguous()
-        edge_attr = torch.tensor([[road_graph[u][v]['width']] for u, v in road_graph.edges])
-        
+        node_pos = np.array(node_pos)
+        tolerance = 2
+        tree = cKDTree(node_pos)
+        groups = tree.query_ball_tree(tree, r=tolerance)
+        used = set()
+        group_map = dict()
+        group_centers = []
+        for i, group in enumerate(groups):
+            if i in used:
+                continue
+            members = set(group)
+            used |= members
+            group_pts = node_pos[list(members)]
+            center = group_pts.mean(axis=0)
+            group_id = len(group_centers)
+            group_centers.append(center)
+            for idx in members:
+                group_map[tuple(node_pos[idx])] = group_id
+        edges = []
+        for idx, row in gdf.iterrows():
+            geom = row.geometry
+            if not geom.is_valid:
+                continue
+            lines = []
+            if isinstance(geom, LineString):
+                lines = [geom]
+            elif isinstance(geom, MultiLineString):
+                lines = list(geom.geoms)
+            else:
+                continue
+            for line in lines:
+                coords = np.array(line.coords)
+                for i in range(len(coords) - 1):
+                    a = coords[i]
+                    b = coords[i+1]
+                    col_a, row_a = ~transform * (a[0], a[1])
+                    col_a = int((col_a / size[1]) * self.output_size[1])
+                    row_a = int((row_a / size[0]) * self.output_size[0])
+                    col_b, row_b = ~transform * (b[0], b[1])
+                    col_b = int((col_b / size[1]) * self.output_size[1])
+                    row_b = int((row_b / size[0]) * self.output_size[0])
+                    na = group_map[(col_a, row_a)]
+                    nb = group_map[(col_b, row_b)]
+                    if na != nb:
+                        edges.append((na, nb))
+        node_features = torch.tensor(np.array(group_centers), dtype=torch.float32)
+        edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous() if edges else torch.empty((2,0), dtype=torch.long)
+        edge_attr = torch.ones((edge_index.shape[1], 1), dtype=torch.float32) if edge_index.numel() > 0 else torch.empty((0,1), dtype=torch.float32)
+        y = []
+        buffer = max(2, self.config.line_width * 1.5)
+        for pos in node_features:
+            pt = Point(float(pos[0]), float(pos[1]))
+            found = False
+            for line in all_lines:
+                coords = np.array(line.coords)
+                px_line = [((~transform * (x, y))[0] / size[1] * self.output_size[1],
+                            (~transform * (x, y))[1] / size[0] * self.output_size[0]) for x, y in coords]
+                shapely_line = LineString(px_line)
+                if shapely_line.buffer(buffer).contains(pt):
+                    found = True
+                    break
+            y.append(1.0 if found else 0.0)
+        y = torch.tensor(y, dtype=torch.float32)
         return {
             'node_features': node_features,
             'edge_index': edge_index,
-            'edge_attr': edge_attr
+            'edge_attr': edge_attr,
+            'y': y
         }
 
     def generate_mask(self, geojson_path: str, img_id: str, output_path: str) -> Optional[str]:
@@ -202,7 +243,8 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
             data = Data(
                 x=graph_data['node_features'],
                 edge_index=graph_data['edge_index'],
-                edge_attr=graph_data['edge_attr']
+                edge_attr=graph_data['edge_attr'],
+                y=graph_data['y']
             )
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -210,4 +252,4 @@ class RoadGraphMaskGenerator(BaseMaskGenerator):
             return output_path
         except Exception as e:
             logger.error(f"Failed to generate graph mask: {str(e)}")
-            return None 
+            return None

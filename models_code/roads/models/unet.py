@@ -1,29 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
-import tensorflow.keras.backend as K
-
-def dice_coefficient(y_true, y_pred, smooth=1.0):
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
-
-def iou_score(y_true, y_pred, smooth=1.0):
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    union = K.sum(y_true_f) + K.sum(y_pred_f) - intersection
-    return (intersection + smooth) / (union + smooth)
-
-def tversky_loss(alpha=0.3, beta=0.7, smooth=1.0):
-    def loss(y_true, y_pred):
-        y_true_f = K.flatten(y_true)
-        y_pred_f = K.flatten(y_pred)
-        true_pos = K.sum(y_true_f * y_pred_f)
-        false_neg = K.sum(y_true_f * (1 - y_pred_f))
-        false_pos = K.sum((1 - y_true_f) * y_pred_f)
-        return 1 - (true_pos + smooth) / (true_pos + alpha * false_neg + beta * false_pos + smooth)
-    return loss
+from models_code.roads.metrics.metrics_binary import dice_coefficient, iou_score, tversky_loss
 
 def create_unet(input_shape=(650, 650, 3), num_classes=1):
     inputs = layers.Input(input_shape)
@@ -59,10 +36,10 @@ def create_unet(input_shape=(650, 650, 3), num_classes=1):
     conv4 = layers.BatchNormalization()(conv4)
     conv4 = layers.Activation("relu")(conv4)
 
-    up3 = layers.Conv2DTranspose(256, 2, strides=2, padding="same")(conv4)
+    up3 = layers.UpSampling2D(size=(2, 2), interpolation='bilinear')(conv4)
+    up3 = layers.Conv2D(256, 2, padding="same")(up3)
     up3 = layers.BatchNormalization()(up3)
     up3 = layers.Activation("relu")(up3)
-    up3 = layers.Resizing(162, 162)(up3)
     up3 = layers.concatenate([up3, conv3])
     conv5 = layers.Conv2D(256, 3, padding="same")(up3)
     conv5 = layers.BatchNormalization()(conv5)
@@ -71,10 +48,10 @@ def create_unet(input_shape=(650, 650, 3), num_classes=1):
     conv5 = layers.BatchNormalization()(conv5)
     conv5 = layers.Activation("relu")(conv5)
     
-    up2 = layers.Conv2DTranspose(128, 2, strides=2, padding="same")(conv5)
+    up2 = layers.UpSampling2D(size=(2, 2), interpolation='bilinear')(conv5)
+    up2 = layers.Conv2D(128, 2, padding="same")(up2)
     up2 = layers.BatchNormalization()(up2)
     up2 = layers.Activation("relu")(up2)
-    up2 = layers.Resizing(325, 325)(up2)
     up2 = layers.concatenate([up2, conv2])
     conv6 = layers.Conv2D(128, 3, padding="same")(up2)
     conv6 = layers.BatchNormalization()(conv6)
@@ -83,10 +60,10 @@ def create_unet(input_shape=(650, 650, 3), num_classes=1):
     conv6 = layers.BatchNormalization()(conv6)
     conv6 = layers.Activation("relu")(conv6)
     
-    up1 = layers.Conv2DTranspose(64, 2, strides=2, padding="same")(conv6)
+    up1 = layers.UpSampling2D(size=(2, 2), interpolation='bilinear')(conv6)
+    up1 = layers.Conv2D(64, 2, padding="same")(up1)
     up1 = layers.BatchNormalization()(up1)
     up1 = layers.Activation("relu")(up1)
-    up1 = layers.Resizing(650, 650)(up1)
     up1 = layers.concatenate([up1, conv1])
     conv7 = layers.Conv2D(64, 3, padding="same")(up1)
     conv7 = layers.BatchNormalization()(conv7)
@@ -148,7 +125,10 @@ def create_unet_graph(input_shape=(650, 650, 3)):
     up3 = layers.Conv2DTranspose(256, 2, strides=2, padding="same")(conv4)
     up3 = layers.BatchNormalization()(up3)
     up3 = layers.Activation("relu")(up3)
-    up3 = layers.Resizing(162, 162)(up3)
+    up3 = layers.Lambda(
+        lambda tensors: tf.image.resize(tensors[0], tf.shape(tensors[1])[1:3]),
+        output_shape=lambda input_shapes: input_shapes[1]
+    )([up3, conv3])
     up3 = layers.concatenate([up3, conv3])
     conv5 = layers.Conv2D(256, 3, padding="same")(up3)
     conv5 = layers.BatchNormalization()(conv5)
@@ -160,7 +140,10 @@ def create_unet_graph(input_shape=(650, 650, 3)):
     up2 = layers.Conv2DTranspose(128, 2, strides=2, padding="same")(conv5)
     up2 = layers.BatchNormalization()(up2)
     up2 = layers.Activation("relu")(up2)
-    up2 = layers.Resizing(325, 325)(up2)
+    up2 = layers.Lambda(
+        lambda tensors: tf.image.resize(tensors[0], tf.shape(tensors[1])[1:3]),
+        output_shape=lambda input_shapes: input_shapes[1]
+    )([up2, conv2])
     up2 = layers.concatenate([up2, conv2])
     conv6 = layers.Conv2D(128, 3, padding="same")(up2)
     conv6 = layers.BatchNormalization()(conv6)
@@ -172,7 +155,10 @@ def create_unet_graph(input_shape=(650, 650, 3)):
     up1 = layers.Conv2DTranspose(64, 2, strides=2, padding="same")(conv6)
     up1 = layers.BatchNormalization()(up1)
     up1 = layers.Activation("relu")(up1)
-    up1 = layers.Resizing(650, 650)(up1)
+    up1 = layers.Lambda(
+        lambda tensors: tf.image.resize(tensors[0], tf.shape(tensors[1])[1:3]),
+        output_shape=lambda input_shapes: input_shapes[1]
+    )([up1, conv1])
     up1 = layers.concatenate([up1, conv1])
     conv7 = layers.Conv2D(64, 3, padding="same")(up1)
     conv7 = layers.BatchNormalization()(conv7)
@@ -181,7 +167,7 @@ def create_unet_graph(input_shape=(650, 650, 3)):
     conv7 = layers.BatchNormalization()(conv7)
     conv7 = layers.Activation("relu")(conv7)
     
-    outputs = layers.Conv2D(3, 1, activation="sigmoid")(conv7)
+    outputs = layers.Conv2D(1, 1, activation="sigmoid")(conv7)
     
     model = Model(inputs=inputs, outputs=outputs)
     

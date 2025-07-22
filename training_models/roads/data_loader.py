@@ -2,133 +2,239 @@ import os
 import tensorflow as tf
 from scripts.color_logger import ColorLogger
 import torch
+from torch_geometric.data import Data
+from torch_geometric.data.data import DataEdgeAttr, DataTensorAttr
+from torch_geometric.data.storage import GlobalStorage
 import io
 from torch.serialization import safe_globals
-from torch_geometric.data import Data
 import numpy as np
+import json
+import rasterio
+import cv2
+from training_models.roads.mask_loader import GraphMaskDataset
+from torch_geometric.loader import DataLoader as TorchGeometricDataLoader
 
 class DataLoader:
-    def __init__(self):
+    def __init__(self, config_path=None, use_imagenet_norm=False, mask_type="binary"):
         self.logger = ColorLogger("DataLoader").get_logger()
         self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        self.mask_type = mask_type
+        if config_path is None:
+            if self.mask_type == "graph":
+                config_path = os.path.join(os.path.dirname(__file__), "config_graph.json")
+            else:
+                config_path = os.path.join(os.path.dirname(__file__), "config_binary.json")
+        with open(config_path, 'r') as f:
+            self.config = json.load(f)
+        self.batch_size = self.config["batch_size"]
+        self.img_size = self.config["img_size"]
+        self.use_imagenet_norm = use_imagenet_norm
+        self.own_mean = tf.constant([0.005, 0.005, 0.005], dtype=tf.float32)
+        self.own_std = tf.constant([0.002, 0.002, 0.002], dtype=tf.float32)
+        self.imagenet_mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
+        self.imagenet_std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
         
-    def load(self, split="train", mask_type="binary"):
+    def get_mask_paths(self, split="train", mask_type="binary", city=None):
+        if mask_type != self.mask_type:
+            self.mask_type = mask_type
         data_dir = os.path.join(self.project_root, f"data/processed/{split}/roads")
         if not os.path.exists(data_dir):
             raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
-            
-        image_paths = sorted([os.path.join(data_dir, "images", f) for f in os.listdir(os.path.join(data_dir, "images")) if f.endswith(".png")])
         mask_dir = "masks_binary" if mask_type == "binary" else "masks_graph"
-        mask_extension = ".png" if mask_type == "binary" else ".pt"
-        mask_paths = sorted([os.path.join(data_dir, mask_dir, f) for f in os.listdir(os.path.join(data_dir, mask_dir)) if f.endswith(mask_extension)])
-        
+        mask_extension = ".tif" if mask_type == "binary" else ".pt"
+        mask_files = [f for f in os.listdir(os.path.join(data_dir, mask_dir)) if f.endswith(mask_extension)]
+        if city is not None and city.lower() != "all":
+            mask_files = [f for f in mask_files if city in f]
+        mask_paths = sorted([os.path.join(data_dir, mask_dir, f) for f in mask_files])
+        if not mask_paths:
+            raise FileNotFoundError(f"No mask files found in {data_dir}/{mask_dir} for city: {city}")
+        return mask_paths
+
+    def load(self, split="train", mask_type=None, city=None):
+        if mask_type is not None:
+            self.mask_type = mask_type
+        data_dir = os.path.join(self.project_root, f"data/processed/{split}/roads")
+        if not os.path.exists(data_dir):
+            raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+        image_files = [f for f in os.listdir(os.path.join(data_dir, "images")) if f.endswith(".tif")]
+        if city is not None and city.lower() != "all":
+            image_files = [f for f in image_files if city in f]
+        image_paths = sorted([os.path.join(data_dir, "images", f) for f in image_files])
+        mask_paths = self.get_mask_paths(split=split, mask_type=self.mask_type, city=city)
         if not image_paths or not mask_paths:
-            raise FileNotFoundError(f"No image-mask pairs found in {data_dir}")
-            
-        self.logger.info(f"Found {len(image_paths)} image-mask pairs")
+            raise FileNotFoundError(f"No image-mask pairs found in {data_dir} for city: {city}")
+        self.logger.info(f"Found {len(image_paths)} image-mask pairs for city: {city if city else 'ALL'}")
         self.logger.info(f"Sample image path: {image_paths[0]}")
         self.logger.info(f"Sample mask path: {mask_paths[0]}")
-        
         image_paths = tf.convert_to_tensor(image_paths, dtype=tf.string)
         mask_paths = tf.convert_to_tensor(mask_paths, dtype=tf.string)
-        
         dataset = tf.data.Dataset.from_tensor_slices((image_paths, mask_paths))
-        
-        if mask_type == "binary":
+        if self.mask_type == "binary":
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_binary(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
         else:
             dataset = dataset.map(lambda img_path, mask_path: self.preprocess_graph(img_path, mask_path), num_parallel_calls=tf.data.AUTOTUNE)
-        
         if split == "train":
             dataset = dataset.map(self.augment_data, num_parallel_calls=tf.data.AUTOTUNE)
-            
-        dataset = dataset.batch(4).prefetch(tf.data.AUTOTUNE)
+        dataset = dataset.batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
         return dataset
     
+    def normalize_img(self, image):
+        if self.use_imagenet_norm:
+            mean = self.imagenet_mean
+            std = self.imagenet_std
+        else:
+            mean = self.own_mean
+            std = self.own_std
+        image = (image - mean) / std
+        return image
+
     def augment_data(self, image, mask):
-        if tf.random.uniform([]) > 0.5:
-            image = tf.image.flip_left_right(image)
-            mask = tf.image.flip_left_right(mask)
-        
-        if tf.random.uniform([]) > 0.5:
-            image = tf.image.flip_up_down(image)
-            mask = tf.image.flip_up_down(mask)
-        
-        if tf.random.uniform([]) > 0.5:
-            angle = tf.random.uniform([], -0.1, 0.1)
-            image = tf.image.rot90(image, k=tf.cast(angle * 4 / 3.14159, tf.int32))
-            mask = tf.image.rot90(mask, k=tf.cast(angle * 4 / 3.14159, tf.int32))
-        
-        if tf.random.uniform([]) > 0.5:
-            scale = tf.random.uniform([], 0.9, 1.1)
-            new_size = tf.cast(tf.cast(tf.shape(image)[:2], tf.float32) * scale, tf.int32)
-            image = tf.image.resize(image, new_size)
-            mask = tf.image.resize(mask, new_size)
-            image = tf.image.resize_with_crop_or_pad(image, 640, 640)
-            mask = tf.image.resize_with_crop_or_pad(mask, 640, 640)
-        
-        if tf.random.uniform([]) > 0.5:
-            delta = tf.random.uniform([], -0.1, 0.1)
-            image = tf.image.adjust_brightness(image, delta)
-        
-        if tf.random.uniform([]) > 0.5:
-            factor = tf.random.uniform([], 0.9, 1.1)
-            image = tf.image.adjust_contrast(image, factor)
-        
+        seed = tf.random.uniform([], maxval=1000000, dtype=tf.int32)
+        image = tf.image.stateless_random_flip_left_right(image, seed=[seed, 0])
+        mask = tf.image.stateless_random_flip_left_right(mask, seed=[seed, 0])
+        image = tf.image.stateless_random_flip_up_down(image, seed=[seed, 1])
+        mask = tf.image.stateless_random_flip_up_down(mask, seed=[seed, 1])
+        angle = tf.random.uniform([], -0.1, 0.1)
+        image = tf.image.rot90(image, k=tf.cast(angle // 90, tf.int32))
+        mask = tf.image.rot90(mask, k=tf.cast(angle // 90, tf.int32))
+        image = tf.image.random_contrast(image, 0.9, 1.1)
+        image = tf.image.random_brightness(image, 0.1)
+        image = tf.image.random_saturation(image, 0.9, 1.1)
+        image = tf.image.random_hue(image, 0.05)
         return image, mask
         
     def preprocess_binary(self, image_path, mask_path):
-        image = tf.io.read_file(image_path)
-        image = tf.image.decode_png(image, channels=3)
-        image = tf.cast(image, tf.float32) / 255.0
-        image = tf.image.crop_to_bounding_box(image, 0, 0, 640, 640)
+        def load_tiff_image(img_path):
+            img_path_str = img_path.numpy().decode('utf-8')
+            with rasterio.open(img_path_str) as src:
+                image = src.read()
+                image = np.moveaxis(image, 0, -1)
+                if image.dtype == np.uint16:
+                    image = (image / 65535.0).astype(np.float32)
+                else:
+                    image = image.astype(np.float32) / 255.0
+                
+                if len(image.shape) == 2:
+                    image = np.stack([image, image, image], axis=-1)
+                elif len(image.shape) == 3:
+                    if image.shape[2] == 1:
+                        image = np.concatenate([image, image, image], axis=-1)
+                    elif image.shape[2] == 3:
+                        pass
+                    elif image.shape[2] > 3:
+                        image = image[:, :, :3]
+                    else:
+                        image = np.concatenate([image, image, image], axis=-1)
+                
+                return image
         
-        mask = tf.io.read_file(mask_path)
-        mask = tf.image.decode_png(mask, channels=1)
-        mask = tf.cast(mask, tf.float32) / 255.0
-        mask = tf.image.crop_to_bounding_box(mask, 0, 0, 640, 640)
+        def load_tiff_mask(mask_path):
+            mask_path_str = mask_path.numpy().decode('utf-8')
+            with rasterio.open(mask_path_str) as src:
+                mask = src.read(1)
+                mask = mask.astype(np.float32)
+                if mask.dtype == np.uint16:
+                    mask = mask / 65535.0
+                elif mask.dtype == np.uint8:
+                    mask = mask / 255.0
+                else:
+                    if mask.max() > 1.0:
+                        mask = mask / mask.max()
+                mask = np.clip(mask, 0.0, 1.0)
+                if np.isnan(mask).any() or np.isinf(mask).any():
+                    raise ValueError(f"Maska zawiera NaN lub inf: {mask_path_str}")
+                return mask
+        
+        image = tf.py_function(load_tiff_image, [image_path], tf.float32)
+        image.set_shape([None, None, 3])
+        image = tf.image.resize(image, self.img_size)
+        image = self.normalize_img(image)
+        
+        mask = tf.py_function(load_tiff_mask, [mask_path], tf.float32)
+        mask.set_shape([None, None])
+        mask = tf.expand_dims(mask, axis=-1)
+        mask = tf.image.resize(mask, self.img_size, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        mask = tf.where(mask > 0.5, 1.0, 0.0)
         
         return image, mask
         
     def preprocess_graph(self, image_path, mask_path):
-        image = tf.io.read_file(image_path)
-        image = tf.image.decode_png(image, channels=3)
-        image = tf.cast(image, tf.float32) / 255.0
+        def load_tiff_image(img_path):
+            img_path_str = img_path.numpy().decode('utf-8')
+            with rasterio.open(img_path_str) as src:
+                image = src.read()
+                image = np.moveaxis(image, 0, -1)
+                if image.dtype == np.uint16:
+                    image = image.astype(np.float32) / 65535.0
+                else:
+                    image = image.astype(np.float32) / 255.0
+                if len(image.shape) == 2:
+                    image = np.stack([image, image, image], axis=-1)
+                elif len(image.shape) == 3:
+                    if image.shape[2] == 1:
+                        image = np.concatenate([image, image, image], axis=-1)
+                    elif image.shape[2] == 3:
+                        pass
+                    elif image.shape[2] > 3:
+                        image = image[:, :, :3]
+                    else:
+                        image = np.concatenate([image, image, image], axis=-1)
+                return image
+        
+        image = tf.py_function(load_tiff_image, [image_path], tf.float32)
+        image.set_shape([None, None, 3])
+        image = tf.image.resize(image, self.img_size)
+        image = self.normalize_img(image)
         
         def load_pt_mask(mask_path):
-            with safe_globals([Data]):
-                mask_data = torch.load(mask_path.numpy().decode('utf-8'), weights_only=False)
-                node_features = np.zeros((650, 650))
-                adj_matrix = np.zeros((650, 650))
-                
-                if hasattr(mask_data, 'x'):
-                    x_data = mask_data.x.detach().cpu().numpy()
-                    if x_data.ndim == 2:
-                        for i in range(x_data.shape[0]):
-                            x, y = x_data[i]
-                            if 0 <= x < 650 and 0 <= y < 650:
-                                node_features[int(x), int(y)] = 1
-                
-                if hasattr(mask_data, 'edge_index'):
-                    edge_index = mask_data.edge_index.detach().cpu().numpy()
-                    for i in range(edge_index.shape[1]):
-                        src, dst = edge_index[:, i]
-                        if 0 <= src < 650 and 0 <= dst < 650:
-                            adj_matrix[int(src), int(dst)] = 1
-                
-                combined_features = np.zeros((650, 650, 3))
-                combined_features[:, :, 0] = node_features
-                combined_features[:, :, 1] = adj_matrix
-                combined_features[:, :, 2] = node_features
-                
-                return combined_features
-            
+            try:
+                torch.serialization.add_safe_globals([Data, DataEdgeAttr, DataTensorAttr, GlobalStorage])
+                mask_path_str = mask_path.numpy().decode('utf-8')
+                data = torch.load(mask_path_str, map_location='cpu', weights_only=False)
+                mask = np.zeros((650, 650), dtype=np.float32)
+                if hasattr(data, 'x') and hasattr(data, 'edge_index'):
+                    nodes = data.x.cpu().numpy() if hasattr(data.x, 'cpu') else np.array(data.x)
+                    edges = data.edge_index.cpu().numpy() if hasattr(data.edge_index, 'cpu') else np.array(data.edge_index)
+                    edges = edges.T if edges.shape[0] == 2 else edges
+                    for edge in edges:
+                        i, j = edge
+                        x1, y1 = nodes[i]
+                        x2, y2 = nodes[j]
+                        pt1 = (int(round(x1)), int(round(y1)))
+                        pt2 = (int(round(x2)), int(round(y2)))
+                        cv2.line(mask, pt1, pt2, color=1.0, thickness=1)
+                else:
+                    print(f"[load_pt_mask] Invalid .pt file structure: {mask_path_str}")
+                return mask.astype(np.float32)
+            except Exception as e:
+                print(f"[load_pt_mask] Error loading {mask_path}: {e}")
+                return np.zeros((650, 650), dtype=np.float32)
+        
         mask = tf.py_function(
             load_pt_mask,
             [mask_path],
             tf.float32
         )
-        mask = tf.cast(mask, tf.float32)
-        mask.set_shape([650, 650, 3])
+        mask.set_shape([self.img_size[0], self.img_size[1]])
+        mask = tf.expand_dims(mask, axis=-1)
+        mask = tf.image.resize(mask, self.img_size, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        mask.set_shape([self.img_size[0], self.img_size[1], 1])
         
-        return image, mask 
+        return image, mask
+
+    def get_graph_loaders(self, img_size, city=None, batch_size=1, mask_type=None):
+        if mask_type is not None:
+            self.mask_type = mask_type
+        train_files = self.get_mask_paths(split="train", mask_type=self.mask_type, city=city)
+        val_files = self.get_mask_paths(split="val", mask_type=self.mask_type, city=city)
+        train_dataset = GraphMaskDataset(root_dir=os.path.dirname(train_files[0]), img_size=img_size[0] if isinstance(img_size, (list, tuple)) else img_size)
+        train_dataset.pt_files = [os.path.basename(f) for f in train_files]
+        val_dataset = GraphMaskDataset(root_dir=os.path.dirname(val_files[0]), img_size=img_size[0] if isinstance(img_size, (list, tuple)) else img_size)
+        val_dataset.pt_files = [os.path.basename(f) for f in val_files]
+        train_loader = TorchGeometricDataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = TorchGeometricDataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        return train_loader, val_loader
+
+def tfa_rotate(image, angle):
+    angle_deg = angle * 180.0 / np.pi
+    return tf.image.rot90(image, k=tf.cast(angle_deg // 90, tf.int32)) 

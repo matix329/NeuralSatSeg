@@ -1,5 +1,6 @@
 import os
 import tensorflow as tf
+import numpy as np
 
 class EpochLogger(tf.keras.callbacks.Callback):
     def __init__(self, log_dir, run_name):
@@ -20,13 +21,16 @@ class EpochLogger(tf.keras.callbacks.Callback):
         log_line = f"Epoch {epoch + 1}: "
         
         for key, value in logs.items():
-            if isinstance(value, (float, int)):
+            if isinstance(value, (list, np.ndarray)) and len(value) > 0 and isinstance(value[0], (float, int)):
+                arr = np.array(value)
+                log_line += f"{key}_mean={arr.mean():.4f} {key}_std={arr.std():.4f} {key}_min={arr.min():.4f} {key}_max={arr.max():.4f} "
+            elif isinstance(value, (float, int)):
                 log_line += f"{key}={value:.4f} "
             else:
                 log_line += f"{key}={value} "
 
         lr = 'N/A'
-        if hasattr(self.model.optimizer, 'lr'):
+        if hasattr(self, 'model') and hasattr(self.model, 'optimizer') and hasattr(self.model.optimizer, 'lr'):
             lr = float(tf.keras.backend.get_value(self.model.optimizer.lr))
         log_line += f"learning_rate={lr:.6f}" if isinstance(lr, (int, float)) else f"learning_rate={lr}"
 
