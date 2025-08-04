@@ -1,0 +1,6 @@
+Epoch 1: accuracy=0.8933 dice_coefficient=0.0009 iou_score=0.0008 loss=0.0489 val_accuracy=0.9016 val_dice_coefficient=0.0009 val_iou_score=0.0008 val_loss=0.0037 learning_rate=0.0010 learning_rate=N/A
+Epoch 2: accuracy=0.8752 dice_coefficient=0.0011 iou_score=0.0010 loss=0.0039 val_accuracy=0.9016 val_dice_coefficient=0.0014 val_iou_score=0.0011 val_loss=0.0026 learning_rate=0.0010 learning_rate=N/A
+Epoch 3: accuracy=0.8721 dice_coefficient=0.0016 iou_score=0.0013 loss=0.0034 val_accuracy=0.9016 val_dice_coefficient=0.0018 val_iou_score=0.0015 val_loss=0.0024 learning_rate=0.0010 learning_rate=N/A
+Epoch 4: accuracy=0.8719 dice_coefficient=0.0018 iou_score=0.0016 loss=0.3070 val_accuracy=0.9016 val_dice_coefficient=0.0029 val_iou_score=0.0029 val_loss=0.0224 learning_rate=0.0010 learning_rate=N/A
+Epoch 5: accuracy=0.8884 dice_coefficient=0.0016 iou_score=0.0015 loss=0.0259 val_accuracy=0.9016 val_dice_coefficient=0.0023 val_iou_score=0.0023 val_loss=0.0029 learning_rate=0.0010 learning_rate=N/A
+Epoch 6: accuracy=0.8786 dice_coefficient=0.0015 iou_score=0.0012 loss=0.0034 val_accuracy=0.9016 val_dice_coefficient=0.0013 val_iou_score=0.0011 val_loss=-0.0048 learning_rate=0.0010 learning_rate=N/A
